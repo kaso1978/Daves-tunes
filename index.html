@@ -292,6 +292,12 @@ button { cursor: pointer; }
   background: var(--surface); border: 3px solid var(--accent); border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
 .update-bar p { margin: 0; flex: 1 1 200px; font-size: 18px; }
 .update-bar .btn { flex: 0 0 auto; }
+.book-page { display: grid; gap: 16px; margin: 16px 0 60px; }
+.book-card { background: var(--surface); border: 2px solid var(--edge); border-radius: 16px; padding: 16px; display: grid; gap: 12px; }
+.book-card p { margin: 0; }
+.book-card .sub { margin: 0; }
+.book-card input[type=text] { width: 100%; min-height: 56px; border: 2px solid var(--edge); border-radius: 12px; background: var(--bg); padding: 10px 14px; font-size: 22px; font-family: var(--font-lyrics); letter-spacing: .04em; }
+.book-code { font-family: var(--font-lyrics); font-size: 26px; font-weight: 700; color: var(--accent); letter-spacing: .04em; overflow-wrap: anywhere; }
 .banner.install { display: grid; background: var(--surface); border: 2px solid var(--accent); margin-top: 12px; }
 .banner .share-ico svg { width: 22px; height: 22px; vertical-align: -4px; color: var(--accent); }
 .banner.warn { display: grid; background: var(--surface); border: 2px solid #e0a54a; }
@@ -652,6 +658,7 @@ button { cursor: pointer; }
     fwd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
     rotate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg>',
     grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M4 3h16" stroke-width="3"/><path d="M4 3v18M9.3 3v18M14.7 3v18M20 3v18M4 9h16M4 15h16" stroke-width="1.4"/><circle cx="9.3" cy="12" r="2.3" fill="currentColor" stroke="none"/><circle cx="14.7" cy="18" r="2.3" fill="currentColor" stroke="none"/></svg>',
+    cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18h10.5a4 4 0 0 0 .5-7.97A6 6 0 0 0 6.2 9.1 4.5 4.5 0 0 0 7 18z"/><path d="M12 11v5M9.8 13.2L12 11l2.2 2.2"/></svg>',
     share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7.5 7.5L12 3l4.5 4.5"/><path d="M8 11H6v10h12V11h-2"/></svg>',
     edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>'
   };
@@ -970,9 +977,107 @@ button { cursor: pointer; }
     if (view.name === "add") return renderAdd();
     if (view.name === "scan") return renderScan();
     if (view.name === "arrange" && findSong(view.id)) return renderArrange(findSong(view.id));
+    if (view.name === "book") return renderBook();
     if (view.name === "playlist" && findPlaylist(view.pl)) return renderPlaylist(findPlaylist(view.pl));
     if (view.name === "pl-add" && findPlaylist(view.pl)) return renderPlaylistAdd(findPlaylist(view.pl));
     renderList();
+  }
+
+  // ---------- Songbook backup file ----------
+  // One file holds every song, playlist and sheet photo, so the songbook can be sent to another phone
+  // (by message or email) and loaded there. Loading only ever adds: nothing on the phone is overwritten.
+  function blobToDataUrl(b) {
+    return new Promise(function (res) { var r = new FileReader(); r.onload = function () { res(r.result); }; r.onerror = function () { res(null); }; r.readAsDataURL(b); });
+  }
+  function dataUrlToBlob(u) { return fetch(u).then(function (r) { return r.blob(); }); }
+  function exportBook() {
+    var photos = {};
+    return Promise.all(songs.map(function (s) {
+      return photosGet(s.id).then(function (blobs) {
+        if (!blobs || !blobs.length) return;
+        return Promise.all(blobs.map(blobToDataUrl)).then(function (urls) { photos[s.id] = urls.filter(Boolean); });
+      });
+    })).then(function () {
+      return { app: "daves-tunes", version: 1, saved: new Date().toISOString(), songs: songs, playlists: playlists, photos: photos };
+    });
+  }
+  function sameSong(a, b) {
+    return ["title", "artist", "capo", "chord", "lyrics"].every(function (k) { return String(a[k] == null ? "" : a[k]) === String(b[k] == null ? "" : b[k]); }) &&
+      JSON.stringify(a.arrangement || null) === JSON.stringify(b.arrangement || null);
+  }
+  function importBook(data) {
+    if (!data || data.app !== "daves-tunes" || !Array.isArray(data.songs)) return Promise.reject(new Error("not a songbook"));
+    var added = 0, idMap = {}, jobs = [];
+    data.songs.forEach(function (inc) {
+      if (!inc || !inc.id || !inc.title) return;
+      var mine = findSong(inc.id);
+      if (mine && sameSong(mine, inc)) { idMap[inc.id] = inc.id; if (inc.unverified !== mine.unverified && !inc.unverified) delete mine.unverified; return; }
+      var copy = JSON.parse(JSON.stringify(inc));
+      if (mine && mine.sample) {
+        // An untouched example song on this phone is simply replaced by the edited one.
+        songs[songs.indexOf(mine)] = copy;
+      } else if (mine) {
+        // Both phones changed this song differently: keep both, so no one's work is lost.
+        copy.id = newId("u-"); copy.title = inc.title + " (from backup)"; songs.push(copy);
+      } else songs.push(copy);
+      idMap[inc.id] = copy.id; added++;
+      var ph = data.photos && data.photos[inc.id];
+      if (ph && ph.length) jobs.push(photosGet(copy.id).then(function (have) {
+        if (have && have.length) return;
+        return Promise.all(ph.map(dataUrlToBlob)).then(function (blobs) { return photosPut(copy.id, blobs); });
+      }));
+    });
+    var lists = 0;
+    (data.playlists || []).forEach(function (inc) {
+      if (!inc || !inc.id || !Array.isArray(inc.items)) return;
+      var items = inc.items.map(function (id) { return idMap[id] || (findSong(id) ? id : null); });
+      var keep = items.map(function (id, i) { return id ? i : -1; }).filter(function (i) { return i >= 0; });
+      var pl = { id: inc.id, name: inc.name, items: keep.map(function (i) { return items[i]; }) };
+      if (inc.arr) pl.arr = keep.map(function (i) { return inc.arr[i] || null; });
+      var mine = findPlaylist(inc.id);
+      if (mine && JSON.stringify([mine.name, mine.items, mine.arr || null]) === JSON.stringify([pl.name, pl.items, pl.arr || null])) return;
+      if (mine) { pl.id = newId("p-"); pl.name = inc.name + " (from backup)"; }
+      playlists.push(pl); lists++;
+    });
+    save(KEY, songs); savePlaylists();
+    return Promise.all(jobs).then(function () { return { songs: added, lists: lists }; });
+  }
+  function renderBook() {
+    document.title = "Share songbook \u00b7 Dave's Tunes";
+    app.innerHTML =
+      '<header class="topbar"><button class="btn ghost" id="back" type="button">' + ICON.back + "Songs</button>" +
+      '<p class="small-title">Share songbook</p></header>' +
+      '<div class="book-page">' +
+        '<section class="book-card"><h3 class="sub">Send the songbook to another phone</h3>' +
+          "<p>Makes one file with every song, playlist and sheet photo. Send it by message or email, then open Dave\u2019s Tunes on the other phone and load it there.</p>" +
+          '<button class="btn primary big" id="export" type="button">' + ICON.share + "Send songbook</button></section>" +
+        '<section class="book-card"><h3 class="sub">Load songs from a songbook file</h3>' +
+          "<p>Adds the songs and playlists from the file. Nothing already on this phone is changed or removed.</p>" +
+          '<label class="btn big" for="import-file">' + ICON.plus + "Choose songbook file</label>" +
+          '<input class="vh" id="import-file" type="file" accept=".json,application/json"></section>' +
+      "</div>";
+    document.getElementById("back").addEventListener("click", goBack);
+    document.getElementById("export").addEventListener("click", function () {
+      var btn = this; btn.disabled = true;
+      exportBook().then(function (data) {
+        var name = "daves-tunes-songbook-" + new Date().toISOString().slice(0, 10) + ".json";
+        var file = new File([JSON.stringify(data)], name, { type: "application/json" });
+        var done = function () { btn.disabled = false; };
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          return navigator.share({ files: [file], title: "Dave\u2019s Tunes songbook" }).then(done, done);
+        }
+        var a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = name;
+        document.body.appendChild(a); a.click(); a.remove(); done();
+        toast("Songbook saved to Downloads");
+      }).catch(function () { btn.disabled = false; toast("Couldn\u2019t make the songbook file"); });
+    });
+    document.getElementById("import-file").addEventListener("change", function () {
+      var f = this.files && this.files[0]; this.value = "";
+      if (!f) return;
+      f.text().then(function (t) { return importBook(JSON.parse(t)); }).then(function (r) {
+        toast(r.songs || r.lists ? "Added " + r.songs + (r.songs === 1 ? " song" : " songs") + (r.lists ? " and " + r.lists + (r.lists === 1 ? " playlist" : " playlists") : "") : "Everything in that file is already here");
+      }).catch(function () { toast("That file isn\u2019t a Dave\u2019s Tunes songbook"); });
+    });
   }
 
   // ---------- Install ----------
@@ -1016,6 +1121,7 @@ button { cursor: pointer; }
     document.title = "Dave's Tunes";
     app.innerHTML =
       '<header class="topbar"><h1 class="logo"><img src="icon.svg" alt="Dave’s Tunes" width="60" height="60"></h1>' +
+      '<button class="btn ghost icon" id="book-btn" type="button" aria-label="Share the songbook with another phone" title="Share songbook">' + ICON.cloud + "</button>" +
       '<button class="btn ghost icon" id="chord-book" type="button" aria-label="All chord charts" title="All chord charts">' + ICON.grid + "</button>" +
       '<button class="btn ghost" id="theme" type="button" aria-label="Change light or dark look"></button></header>' +
       installBanner() +
@@ -1033,6 +1139,7 @@ button { cursor: pointer; }
     document.getElementById("tab-songs").addEventListener("click", function () { setTab("songs"); });
     document.getElementById("tab-lists").addEventListener("click", function () { setTab("lists"); });
     document.getElementById("chord-book").addEventListener("click", openChordBook);
+    document.getElementById("book-btn").addEventListener("click", function () { go({ name: "book" }); });
     wireInstall();
     var tb = document.getElementById("theme");
     function showTheme() { tb.innerHTML = THEME_LABEL[prefs.theme || "auto"]; }
