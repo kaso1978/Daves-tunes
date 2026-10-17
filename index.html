@@ -275,11 +275,45 @@ button { cursor: pointer; }
 .spinner { width: 48px; height: 48px; border-radius: 50%; border: 5px solid var(--accent-soft); border-top-color: var(--accent); animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+.lyrics { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.lyrics .w { border-radius: 6px; }
+.lyrics .w.pressing { background: var(--accent-soft); box-shadow: 0 0 0 4px var(--accent-soft); }
+.tip { color: var(--muted); font-size: 16px; margin: 4px 0 0; }
+.sheet-back { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; }
+.sheet {
+  width: 100%; max-width: 760px; background: var(--surface); border-radius: 22px 22px 0 0; display: grid; gap: 14px;
+  padding: 18px var(--gutter-r) calc(18px + env(safe-area-inset-bottom, 0px)) var(--gutter-l);
+  max-height: 92vh; overflow-y: auto;
+}
+.sheet-title { margin: 0; font-size: 20px; font-weight: 700; }
+.sheet-title q { font-family: var(--font-lyrics); color: var(--accent); }
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; }
+.pick-grid .chip { min-height: 58px; font-size: 22px; }
+.pick-other { display: flex; gap: 10px; }
+.pick-other input {
+  flex: 1; min-width: 0; min-height: 56px; border: 2px solid var(--edge); border-radius: 12px;
+  background: var(--bg); padding: 0 14px; font-size: 20px; font-family: var(--font-lyrics);
+}
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
 </style>
 
 <div class="wrap" id="app"></div>
 <div class="toast" id="toast" hidden></div>
+<div class="sheet-back" id="picker" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="pick-title">
+    <p class="sheet-title" id="pick-title"></p>
+    <div class="pick-grid" id="pick-grid"></div>
+    <div class="pick-other">
+      <input id="pick-input" autocapitalize="characters" autocomplete="off" placeholder="Other, like Bb" aria-label="Another chord">
+      <button class="btn primary" id="pick-add" type="button">Add</button>
+    </div>
+    <p class="error" id="pick-error" hidden></p>
+    <div class="form-actions">
+      <button class="btn danger" id="pick-remove" type="button">Remove chord</button>
+      <button class="btn" id="pick-cancel" type="button">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <script>
 (function () {
@@ -492,29 +526,72 @@ button { cursor: pointer; }
   }
   // A chord line sitting over a lyric line is merged into it: each chord rides above the letter it was
   // typed over, so the chords stay in place when big text makes the words wrap on a phone.
-  function mergeChords(chordLine, lyric) {
+  // Every word is wrapped in a span that remembers its line and column, so a long press can put a
+  // chord over it. Chords from the line above ride over the letter they were typed above.
+  function chordMarks(chordLine) {
     var marks = [], m, re = /\S+/g;
-    while ((m = re.exec(chordLine))) marks.push({ col: m.index, c: m[0] });
+    while ((m = re.exec(chordLine || ""))) marks.push({ col: m.index, c: m[0] });
+    return marks;
+  }
+  function lyricHtml(lyric, lineIdx, marks) {
     var last = marks.length ? marks[marks.length - 1].col : 0;
     while (lyric.length < last) lyric += " ";
-    var out = "", at = 0;
-    marks.forEach(function (k) {
-      out += esc(lyric.slice(at, k.col)) + '<span class="ch" data-c="' + esc(k.c) + '"></span>';
-      at = k.col;
-    });
-    return '<div class="ln sung">' + out + esc(lyric.slice(at)) + "</div>";
+    var at = {}, out = "", inWord = false;
+    marks.forEach(function (k) { at[k.col] = k.c; });
+    for (var i = 0; i <= lyric.length; i++) {
+      var ch = lyric.charAt(i), space = !ch || /\s/.test(ch);
+      if (inWord && space) { out += "</span>"; inWord = false; }
+      if (!inWord && !space) {
+        var end = i; while (end < lyric.length && !/\s/.test(lyric.charAt(end))) end++;
+        out += '<span class="w" data-l="' + lineIdx + '" data-c="' + i + '" data-e="' + end + '">';
+        inWord = true;
+      }
+      if (at[i] != null) out += '<span class="ch" data-c="' + esc(at[i]) + '"></span>';
+      out += esc(ch);
+    }
+    return out;
   }
   function renderLyrics(text) {
     var lines = String(text || "").replace(/\r/g, "").split("\n"), html = "";
     for (var i = 0; i < lines.length; i++) {
       var l = lines[i], cls = lineClass(l), next = lines[i + 1];
       if (cls === "ln chord" && next != null && next.trim() && lineClass(next) === "ln") {
-        html += mergeChords(l, next); i++; continue;
+        html += '<div class="ln sung">' + lyricHtml(next, i + 1, chordMarks(l)) + "</div>"; i++; continue;
       }
+      if (cls === "ln" && l.trim()) { html += '<div class="ln">' + lyricHtml(l, i, []) + "</div>"; continue; }
       var shown = cls === "ln section" ? l.trim().replace(/^\[|\]$/g, "") : l;
       html += '<div class="' + cls + '">' + (esc(shown) || "&nbsp;") + "</div>";
     }
     return html;
+  }
+
+  // Put `chord` over the word at [col, end) of lyric line `li` ("" removes it), creating or tidying
+  // the chord line above as needed. Returns the new lyrics text.
+  function setChordOnWord(text, li, col, end, chord) {
+    var lines = String(text || "").replace(/\r/g, "").split("\n");
+    var hasLine = li > 0 && lineClass(lines[li - 1]) === "ln chord";
+    var marks = hasLine ? chordMarks(lines[li - 1]) : [];
+    marks = marks.filter(function (k) { return k.col < col || k.col >= end; });
+    if (chord) marks.push({ col: col, c: chord });
+    marks.sort(function (a, b) { return a.col - b.col; });
+    var line = "";
+    marks.forEach(function (k) {
+      var pos = Math.max(k.col, line.length ? line.length + 1 : 0);
+      while (line.length < pos) line += " ";
+      line += k.c;
+    });
+    if (hasLine) {
+      if (line) lines[li - 1] = line; else lines.splice(li - 1, 1);
+    } else if (line) {
+      lines.splice(li, 0, line);
+    }
+    return lines.join("\n");
+  }
+  function chordOnWord(text, li, col, end) {
+    var lines = String(text || "").split("\n");
+    if (!(li > 0 && lineClass(lines[li - 1]) === "ln chord")) return "";
+    var hit = chordMarks(lines[li - 1]).filter(function (k) { return k.col >= col && k.col < end; })[0];
+    return hit ? hit.c : "";
   }
 
   // ---------- Navigation (phone back button works too) ----------
@@ -606,7 +683,8 @@ button { cursor: pointer; }
       '<section class="song-head"><div class="names"><h2>' + esc(s.title) + "</h2>" +
       (s.artist ? '<div class="artist">' + esc(s.artist) + "</div>" : "") + "</div>" +
       '<div class="plate"><div class="big">' + esc(capoLabel(s)) + '</div><div class="small">' + esc(capoWords(s)) + "</div></div></section>" +
-      '<div class="lyrics" id="lyrics" title="Tap to start or stop scrolling">' + renderLyrics(s.lyrics) + "</div>" +
+      '<p class="tip">Tap the words to start or stop scrolling. Press and hold a word to put a chord over it.</p>' +
+      '<div class="lyrics" id="lyrics">' + renderLyrics(s.lyrics) + "</div>" +
       '<div class="end-space">End of song</div>' +
       '<div class="controls"><div class="row">' +
         '<div class="group"><span class="lbl">Text size</span><div class="pair">' +
@@ -625,11 +703,81 @@ button { cursor: pointer; }
     document.getElementById("back").addEventListener("click", goBack);
     document.getElementById("edit").addEventListener("click", function () { go({ name: "edit", id: s.id }); });
     document.getElementById("play").addEventListener("click", togglePlay);
-    document.getElementById("lyrics").addEventListener("click", togglePlay);
+    var lyr = document.getElementById("lyrics");
+    lyr.addEventListener("click", function () {
+      if (justPicked) { justPicked = false; return; }  // the long press already handled this touch
+      togglePlay();
+    });
+    lyr.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+    lyr.addEventListener("pointerdown", function (e) {
+      justPicked = false;
+      var w = e.target.closest(".w");
+      if (!w) return;
+      var x0 = e.clientX, y0 = e.clientY;
+      w.classList.add("pressing");
+      function cancel() { clearTimeout(timer); w.classList.remove("pressing"); off(); }
+      function move(ev) { if (Math.abs(ev.clientX - x0) > 12 || Math.abs(ev.clientY - y0) > 12) cancel(); }
+      function off() {
+        lyr.removeEventListener("pointermove", move); lyr.removeEventListener("pointerup", cancel);
+        lyr.removeEventListener("pointercancel", cancel); window.removeEventListener("scroll", cancel);
+      }
+      var timer = setTimeout(function () {
+        off(); w.classList.remove("pressing"); justPicked = true;
+        stopScroll();
+        try { if (navigator.vibrate) navigator.vibrate(30); } catch (x) {}
+        openPicker(s, w);
+      }, 500);
+      lyr.addEventListener("pointermove", move); lyr.addEventListener("pointerup", cancel);
+      lyr.addEventListener("pointercancel", cancel); window.addEventListener("scroll", cancel, { passive: true });
+    });
     document.getElementById("fdown").addEventListener("click", function () { setFont(prefs.font - FONT_STEP); });
     document.getElementById("fup").addEventListener("click", function () { setFont(prefs.font + FONT_STEP); });
     document.getElementById("sdown").addEventListener("click", function () { setSpeed(speedFor(s) - 1); });
     document.getElementById("sup").addEventListener("click", function () { setSpeed(speedFor(s) + 1); });
+  }
+
+  // ---------- Chord picker (opened by pressing and holding a word) ----------
+  var justPicked = false;
+  var PICK_CHORDS = ["C", "D", "E", "F", "G", "A", "B", "Am", "Bm", "Dm", "Em", "F#m", "C7", "D7", "E7", "G7", "A7", "B7"];
+  function openPicker(s, w) {
+    var li = Number(w.getAttribute("data-l")), col = Number(w.getAttribute("data-c")), end = Number(w.getAttribute("data-e"));
+    var word = w.textContent, current = chordOnWord(s.lyrics, li, col, end);
+    var back = document.getElementById("picker"), input = document.getElementById("pick-input"), err = document.getElementById("pick-error");
+    document.getElementById("pick-title").innerHTML = (current ? "Change the chord over " : "Put a chord over ") + "<q>" + esc(word) + "</q>";
+    document.getElementById("pick-grid").innerHTML = PICK_CHORDS.map(function (c) {
+      return '<button class="chip' + (c === current ? " on" : "") + '" type="button" data-pick="' + c + '">' + c + "</button>";
+    }).join("");
+    input.value = ""; err.hidden = true;
+    document.getElementById("pick-remove").hidden = !current;
+    back.hidden = false;
+    function close() {
+      back.hidden = true;
+      back.onclick = null;
+      setTimeout(function () { justPicked = false; }, 400);
+    }
+    function apply(chord) {
+      var y = window.scrollY;
+      s.lyrics = setChordOnWord(s.lyrics, li, col, end, chord);
+      delete s.sample;
+      save(KEY, songs);
+      close();
+      document.getElementById("lyrics").innerHTML = renderLyrics(s.lyrics);
+      window.scrollTo(0, y);
+      toast(chord ? chord + " added over \u201c" + word + "\u201d" : "Chord removed");
+    }
+    back.onclick = function (e) {
+      var t = e.target;
+      if (t === back || t.id === "pick-cancel") return close();
+      var pick = t.closest("[data-pick]");
+      if (pick) return apply(pick.getAttribute("data-pick"));
+      if (t.id === "pick-remove") return apply("");
+      if (t.id === "pick-add") {
+        var v = input.value.trim();
+        if (v) v = v.charAt(0).toUpperCase() + v.slice(1);
+        if (!v || !CHORD.test(v)) { err.textContent = "Type a chord name like Bb, C#m or Gsus4."; err.hidden = false; return; }
+        apply(v);
+      }
+    };
   }
 
   function applyFont() {
