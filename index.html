@@ -285,6 +285,7 @@ button { cursor: pointer; }
 .btn.filter { min-height: 48px; padding: 0 14px; font-size: 17px; }
 .btn.filter.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .check-row { display: flex; align-items: center; gap: 14px; font-size: 19px; font-weight: 700; background: var(--surface); border: 2px solid var(--edge); border-radius: 14px; padding: 14px 16px; cursor: pointer; }
+.check-row .hint { display: block; color: var(--muted); font-size: 15px; font-weight: 500; }
 .check-row input { width: 30px; height: 30px; accent-color: var(--accent); flex: none; }
 .sheet-photos { display: grid; gap: 10px; }
 .lyrics .sheet-img { display: block; width: 100%; border-radius: 12px; margin-bottom: 12px; background: #fff; }
@@ -816,7 +817,7 @@ button { cursor: pointer; }
     var oc = document.getElementById("only-check");
     oc.hidden = !toCheck;
     oc.className = "btn filter" + (onlyCheck ? " on" : "");
-    oc.textContent = onlyCheck ? "Show all songs" : "Needs checking (" + toCheck + ")";
+    oc.textContent = onlyCheck ? "Show all songs" : "Needs review (" + toCheck + ")";
     oc.onclick = function () { onlyCheck = !onlyCheck; fillList(); };
     var shown = songs.slice().sort(byTitle).filter(function (s) {
       if (onlyCheck && !s.unverified) return false;
@@ -836,7 +837,7 @@ button { cursor: pointer; }
     list.innerHTML = shown.map(function (s) {
       return '<li><button class="song-row" type="button" data-id="' + esc(s.id) + '">' +
         '<span class="info"><span class="t">' + esc(s.title) + (s.sample ? '<span class="tag">Example</span>' : "") +
-        (s.unverified ? '<span class="tag check">Needs checking</span>' : "") + "</span>" +
+        (s.unverified ? '<span class="tag check">Needs review</span>' : "") + "</span>" +
         (s.artist ? '<span class="a">' + esc(s.artist) + "</span>" : "") + "</span>" +
         '<span class="capo-chip" aria-label="' + esc(capoWords(s)) + '">' + esc(capoLabel(s)) + "</span></button></li>";
     }).join("");
@@ -878,8 +879,8 @@ button { cursor: pointer; }
       (s.artist ? '<div class="artist">' + esc(s.artist) + "</div>" : "") +
       (plCtx ? '<div class="pl-ctx">Song ' + (plCtx.idx + 1) + " of " + plCtx.ids.length + " in \u201c" + esc(plCtx.pl.name) + "\u201d</div>" : "") + "</div>" +
       '<div class="plate"><div class="big">' + esc(capoLabel(s)) + '</div><div class="small">' + esc(capoWords(s)) + "</div></div></section>" +
-      (s.unverified ? '<div class="banner warn"><p><b>This song came from a photo and hasn\u2019t been checked yet.</b></p>' +
-        '<div class="form-actions"><button class="btn" id="check-now" type="button">' + ICON.edit + "Check it now</button>" +
+      (s.unverified ? '<div class="banner warn"><p><b>This song is marked for review.</b></p>' +
+        '<div class="form-actions"><button class="btn" id="check-now" type="button">' + ICON.edit + "Review it now</button>" +
         (String(s.lyrics || "").trim() ? '<button class="btn" id="mark-checked" type="button">' + ICON.check + "It\u2019s correct</button>" : "") + "</div></div>" : "") +
       partsBar(s) +
       '<div class="song-actions"><button class="btn" id="arrange" type="button">' + ICON.list + "Arrange</button>" +
@@ -919,7 +920,7 @@ button { cursor: pointer; }
       cn.addEventListener("click", function () { go({ name: "edit", id: s.id }); });
       var mc = document.getElementById("mark-checked");
       if (mc) mc.addEventListener("click", function () {
-        delete s.unverified; save(KEY, songs); toast("Marked as checked");
+        delete s.unverified; save(KEY, songs); toast("Marked as reviewed");
         var y = window.scrollY; renderSong(s); window.scrollTo(0, y);
       });
     }
@@ -1364,7 +1365,7 @@ button { cursor: pointer; }
         (photos.length
           ? '<p class="lead">' + (photos.length === 1 ? "Got it." : "Got " + photos.length + " pages.") +
             " Make sure the words are the right way up (tap ↻ to turn the photo). If the song runs onto another page, add that too.</p><div class=\"thumbs\">" + thumbs + "</div>"
-          : (lastSaved ? '<div class="banner">' + ICON.check + "<p><b>Saved \u201c" + esc(lastSaved) + "\u201d to check later.</b> Take a photo of the next sheet, or tap Back when you\u2019re done.</p></div>" : "") +
+          : (lastSaved ? '<div class="banner">' + ICON.check + "<p><b>Saved \u201c" + esc(lastSaved) + "\u201d to review later.</b> Take a photo of the next sheet, or tap Back when you\u2019re done.</p></div>" : "") +
             '<p class="lead">Lay the sheet flat in good light and take a photo from straight above, so all the words are in the picture.</p>') +
         // Real <label>s over the file inputs: some phones ignore a script "click" on a hidden input
         '<input class="vh" id="photo" type="file" accept="image/*" capture="environment" tabindex="-1">' +
@@ -1648,7 +1649,7 @@ button { cursor: pointer; }
         '<button class="btn primary" id="leave-no" type="button">Keep editing</button></div></div>' +
       '<form class="form" id="form" novalidate>' +
         (fromDraft && fromDraft.scanned
-          ? '<div class="banner">' + ICON.check + "<p><b>Here’s what was read from the sheet.</b> Check it against the paper now, or just tap <b>Save, check later</b> and move on to the next sheet." +
+          ? '<div class="banner">' + ICON.check + "<p><b>Here’s what was read from the sheet.</b> Check it against the paper now, or just tap <b>Save, review later</b> and move on to the next sheet." +
             (fromDraft.ocr ? " Handwriting and chords often come out wrong, so look closely when you check." : "") + "</p></div>"
           : "") +
         (needsCheck ? '<div class="sheet-photos"><button class="btn" id="show-photos" type="button" hidden>' + ICON.camera + "Show the sheet photo</button>" +
@@ -1676,17 +1677,17 @@ button { cursor: pointer; }
           '<div class="confirm" id="confirm" hidden><p>Delete “' + esc(s.title) + '” for good?</p>' +
           '<div class="form-actions"><button class="btn danger" id="del-yes" type="button">Yes, delete it</button>' +
           '<button class="btn" id="del-no" type="button">Keep it</button></div></div></div>') +
-        (needsCheck ? '<label class="check-row" for="f-checked"><input type="checkbox" id="f-checked"><span>I\u2019ve checked the words against the paper</span></label>' : "") +
+        '<label class="check-row" for="f-review"><input type="checkbox" id="f-review"' + (needsCheck ? " checked" : "") + '><span>Needs review<span class="hint">Tick it to come back and check this song later.</span></span></label>' +
         '<div class="savebar"><button class="btn primary big" id="save-btn" type="submit">' + ICON.check + "Save song</button></div>" +
       "</form>";
 
     var capoVal = Number(s.capo) || 0;
     var capoOut = document.getElementById("f-capo"), chord = document.getElementById("f-chord");
-    var checkedBox = document.getElementById("f-checked"), saveBtn = document.getElementById("save-btn");
+    var reviewBox = document.getElementById("f-review"), saveBtn = document.getElementById("save-btn");
     function saveLabel() {
-      saveBtn.innerHTML = ICON.check + (checkedBox && !checkedBox.checked ? "Save, check later" : "Save song");
+      saveBtn.innerHTML = ICON.check + (reviewBox.checked ? "Save, review later" : "Save song");
     }
-    if (checkedBox) checkedBox.addEventListener("change", saveLabel);
+    reviewBox.addEventListener("change", saveLabel);
     saveLabel();
     // Show the photo(s) the song was scanned from, to check the words against.
     if (needsCheck) {
@@ -1747,7 +1748,7 @@ button { cursor: pointer; }
 
     var leave = document.getElementById("leave");
     document.getElementById("cancel").addEventListener("click", function () {
-      var changed = JSON.stringify(current()) !== start || (fromDraft && fromDraft.scanned);
+      var changed = JSON.stringify(current()) !== start || reviewBox.checked !== needsCheck || (fromDraft && fromDraft.scanned);
       if (!changed) return goBack();
       leave.hidden = false; window.scrollTo(0, 0);
     });
@@ -1757,7 +1758,7 @@ button { cursor: pointer; }
     document.getElementById("form").addEventListener("submit", function (e) {
       e.preventDefault();
       var v = current(), err = document.getElementById("f-error");
-      if (!v[0] && checkedBox && !checkedBox.checked) {
+      if (!v[0] && reviewBox.checked) {
         v[0] = "Scanned song " + new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + (songs.filter(function (x) { return x.unverified; }).length + 1);
       }
       if (!v[0]) {
@@ -1765,7 +1766,7 @@ button { cursor: pointer; }
         document.getElementById("f-title").focus(); return;
       }
       var data = { title: v[0], artist: v[1], capo: v[2], chord: v[3], lyrics: v[4] };
-      var later = !!(checkedBox && !checkedBox.checked);
+      var later = reviewBox.checked;
       var id;
       if (isNew) {
         id = "u-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -1789,7 +1790,7 @@ button { cursor: pointer; }
         lastSaved = data.title; photos = [];
         return go({ name: "scan" }, true);
       }
-      toast(isNew ? "Song added" : later ? "Saved. It still needs checking." : "Song saved");
+      toast(isNew ? "Song added" : later ? "Saved. It\u2019s marked for review." : "Song saved");
       if (isNew) go({ name: "song", id: id }, true);
       else history.back();  // return to the song page it was opened from
     });
