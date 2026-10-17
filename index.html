@@ -265,6 +265,8 @@ button { cursor: pointer; }
 .thumb { position: relative; margin: 0; width: 132px; }
 .thumb img { width: 132px; height: 170px; object-fit: cover; border-radius: 12px; border: 2px solid var(--line); display: block; }
 .thumb .sq { position: absolute; top: 6px; right: 6px; width: 44px; height: 44px; font-size: 26px; background: var(--surface); }
+.thumb .sq.rot { right: auto; left: 6px; }
+.thumb .sq.rot svg { width: 24px; height: 24px; }
 .thumb figcaption { text-align: center; color: var(--muted); font-size: 15px; margin-top: 4px; }
 .reading { display: grid; justify-items: center; gap: 14px; text-align: center; padding: 20px; background: var(--surface); border: 2px solid var(--line); border-radius: 16px; }
 .reading p { margin: 0; font-size: 19px; }
@@ -453,6 +455,7 @@ button { cursor: pointer; }
     camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h2.5l1.5-2h6l1.5 2H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="4"/></svg>',
     keys: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>',
     check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+    rotate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg>',
     edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>'
   };
 
@@ -740,6 +743,7 @@ button { cursor: pointer; }
     document.title = "Scan a sheet · Dave's Tunes";
     var thumbs = photos.map(function (f, i) {
       return '<figure class="thumb"><img alt="Page ' + (i + 1) + '" src="' + f.url + '">' +
+        '<button class="sq rot" type="button" data-rot="' + i + '" aria-label="Turn page ' + (i + 1) + '">' + ICON.rotate + "</button>" +
         '<button class="sq" type="button" data-rm="' + i + '" aria-label="Remove page ' + (i + 1) + '">×</button>' +
         "<figcaption>Page " + (i + 1) + "</figcaption></figure>";
     }).join("");
@@ -750,7 +754,7 @@ button { cursor: pointer; }
       '<div class="scan">' +
         (photos.length
           ? '<p class="lead">' + (photos.length === 1 ? "Got it." : "Got " + photos.length + " pages.") +
-            " If the song runs onto another page, add that too.</p><div class=\"thumbs\">" + thumbs + "</div>"
+            " Make sure the words are the right way up (tap ↻ to turn the photo). If the song runs onto another page, add that too.</p><div class=\"thumbs\">" + thumbs + "</div>"
           : '<p class="lead">Lay the sheet flat in good light and take a photo from straight above, so all the words are in the picture.</p>') +
         // Real <label>s over the file inputs: some phones ignore a script "click" on a hidden input
         '<input class="vh" id="photo" type="file" accept="image/*" capture="environment" tabindex="-1">' +
@@ -769,9 +773,13 @@ button { cursor: pointer; }
     document.getElementById("back").addEventListener("click", goBack);
     function addFile(input) {
       var f = input.files && input.files[0];
+      input.value = "";
       if (!f) return;
-      photos.push({ file: f, url: URL.createObjectURL(f) });
-      renderScan();
+      var ph = { file: f, rot: 0 };
+      preparePhoto(ph).then(function () { photos.push(ph); renderScan(); }, function () {
+        var err = document.getElementById("scan-error");
+        err.textContent = "That photo couldn\u2019t be opened. Try taking it again."; err.hidden = false;
+      });
     }
     var cam = document.getElementById("photo"), lib = document.getElementById("photo-lib");
     cam.addEventListener("change", function () { addFile(cam); });
@@ -785,6 +793,13 @@ button { cursor: pointer; }
       b.addEventListener("click", function () {
         var i = Number(b.getAttribute("data-rm"));
         URL.revokeObjectURL(photos[i].url); photos.splice(i, 1); renderScan();
+      });
+    });
+    app.querySelectorAll("[data-rot]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var ph = photos[Number(b.getAttribute("data-rot"))];
+        ph.rot = (ph.rot + 90) % 360;
+        preparePhoto(ph).then(renderScan);
       });
     });
     var rd = document.getElementById("read"); if (rd) rd.addEventListener("click", readSheet);
@@ -815,6 +830,49 @@ button { cursor: pointer; }
     });
   }
 
+  // Draw the photo upright (phones store many photos sideways with a "turn me" note that <img> honours
+  // but the reader ignores), apply any extra turns, shrink it, and keep that version for reading.
+  function preparePhoto(ph) {
+    return new Promise(function (resolve, reject) {
+      var src = URL.createObjectURL(ph.file), img = new Image();
+      img.onload = function () {
+        URL.revokeObjectURL(src);
+        var w = img.naturalWidth, hgt = img.naturalHeight, scale = Math.min(1, 2400 / Math.max(w, hgt));
+        w = Math.round(w * scale); hgt = Math.round(hgt * scale);
+        var side = ph.rot % 180 !== 0, cv = document.createElement("canvas");
+        cv.width = side ? hgt : w; cv.height = side ? w : hgt;
+        var ctx = cv.getContext("2d");
+        ctx.translate(cv.width / 2, cv.height / 2);
+        ctx.rotate(ph.rot * Math.PI / 180);
+        ctx.drawImage(img, -w / 2, -hgt / 2, w, hgt);
+        cv.toBlob(function (blob) {
+          if (!blob) return reject();
+          if (ph.url) URL.revokeObjectURL(ph.url);
+          ph.blob = blob; ph.url = URL.createObjectURL(blob);
+          resolve(ph);
+        }, "image/jpeg", 0.92);
+      };
+      img.onerror = function () { URL.revokeObjectURL(src); reject(); };
+      img.src = src;
+    });
+  }
+
+  // Tidy what the reader saw: drop page furniture ("1 of 2", dates), turn "(1)" into [Verse 1]
+  // and CHORUS into [Chorus].
+  function tidyLine(l) {
+    l = l.replace(/^\s*\d+\s+of\s+\d+\s+/i, "").replace(/\s+\d{4}[-\/.]\d{1,2}[-\/.]\d{1,2}\s*$/, "");
+    if (/^\s*\d+\s+of\s+\d+\s*$/i.test(l) || /^\s*\d{4}[-\/.]\d{1,2}[-\/.]\d{1,2}\s*$/.test(l)) return "";
+    if (/^\s*(chorus|refrain)\s*:?\s*$/i.test(l)) return "[Chorus]";
+    if (/^\s*bridge\s*:?\s*$/i.test(l)) return "[Bridge]";
+    var v = l.match(/^\s*[(\[{]?\s*(\d{1,2})\s*[)\]}.]\s+(.*)$/);
+    if (v) return "[Verse " + v[1] + "]\n" + v[2];
+    return l;
+  }
+  function titleFrom(line) {
+    var words = line.replace(/^\[.*\]\s*/, "").split(/[,;.!?]/)[0].trim().split(/\s+/).slice(0, 6);
+    return words.map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(); }).join(" ");
+  }
+
   // Turn the photo reader's plain text into a song: pull out "1-C" / "Capo 3" and a title from the top.
   function songFromText(text) {
     var lines = String(text).replace(/\r/g, "").split("\n").map(function (l) { return l.replace(/\s+$/, ""); });
@@ -825,8 +883,11 @@ button { cursor: pointer; }
       if (m && Number(m[1]) <= 12) { capo = Number(m[1]); chord = m[2]; lines[i] = l.replace(m[0], "").trim(); break; }
       if (c && Number(c[1]) <= 12) { capo = Number(c[1]); lines[i] = l.replace(c[0], "").trim(); break; }
     }
+    lines = lines.map(tidyLine).join("\n").split("\n");
     while (lines.length && !lines[0].trim()) lines.shift();
-    if (lines.length && lineClass(lines[0]) === "ln") title = lines.shift().trim();
+    // A short first line is the title; otherwise borrow the song's opening words, as hymnals do.
+    if (lines.length && lineClass(lines[0]) === "ln" && lines[0].trim().length <= 40 && !/[,;]$/.test(lines[0].trim())) title = lines.shift().trim();
+    else for (var t = 0; t < lines.length && !title; t++) if (lineClass(lines[t]) === "ln" && lines[t].trim()) title = titleFrom(lines[t]);
     if (!chord) {
       for (var j = 0; j < lines.length && !chord; j++) if (lineClass(lines[j]) === "ln chord") chord = lines[j].trim().split(/\s+/)[0];
     }
@@ -834,12 +895,45 @@ button { cursor: pointer; }
     lines = lines.filter(function (l, k) {
       return !(!l.trim() && k > 0 && lineClass(lines[k - 1]) === "ln chord" && lines[k + 1] && lineClass(lines[k + 1]) === "ln" && lines[k + 1].trim());
     });
+    lines = lines.reduce(function (acc, l) {
+      if (lineClass(l) === "ln section" && acc.length && acc[acc.length - 1].trim()) acc.push("");
+      acc.push(l); return acc;
+    }, []);
     var lyrics = lines.join("\n").replace(/^\s*\n/, "").replace(/\n{3,}/g, "\n\n").replace(/\s+$/, "");
     return { title: title, artist: "", capo: capo, chord: chord, lyrics: lyrics };
   }
 
+  // Keep the lines the reader is sure of (skipping smudges, the tablecloth and scribbles in the
+  // margin). Words far off to the side of a line are margin notes, unless the line is chords.
+  function cleanLine(t) {
+    // The reader sometimes doubles a lone chord letter ("Cc") or drops its case; fix that first.
+    var asChords = t.replace(/(^|\s)([A-Ga-g])\2?(?=\s|$)/gi, function (m, sp, c) { return sp + c.toUpperCase() + (m.length - sp.length > 1 ? " " : ""); });
+    if (lineClass(asChords) === "ln chord") return asChords.replace(/\s+$/, "");
+    if (lineClass(t) === "ln chord") return t;
+    var segs = t.split(/\s{4,}/).map(function (s) { return s.trim(); }).filter(Boolean);
+    var keep = segs.filter(function (s) {
+      return (s.match(/[A-Za-z]/g) || []).length >= 6 || lineClass(s) === "ln chord" || /^\(?\d{1,2}\)$/.test(s) ||
+        /^\d{1,2}\s*[-\u2013\u2014]\s*[A-G][#b]?m?$/.test(s) || /^capo\b/i.test(s);
+    });
+    return keep.join(" ").replace(/(^|\s)\|(?=\s|$)/g, "$1I").replace(/\s{2,}/g, " ").replace(/^[^A-Za-z0-9(\[]+/, "");
+  }
+  function pageText(data) {
+    if (!data.blocks || !data.blocks.length) return data.text || "";
+    var out = [];
+    data.blocks.forEach(function (b) {
+      (b.paragraphs || []).forEach(function (par) {
+        (par.lines || []).forEach(function (ln) {
+          if (ln.confidence < 50) return;
+          var t = cleanLine(ln.text.replace(/\s+$/, ""));
+          if (t && (t.match(/[A-Za-z]/g) || []).length >= Math.max(1, t.replace(/\s/g, "").length * 0.5)) out.push(t);
+        });
+      });
+    });
+    return out.join("\n");
+  }
+
   function readWithOcr(onProgress) {
-    var worker = null, files = photos.map(function (p) { return p.file; }), texts = [];
+    var worker = null, files = photos.map(function (p) { return p.blob || p.file; }), texts = [];
     var stopped = false;
     scanCtl = { abort: function () { stopped = true; if (worker) worker.terminate(); } };
     return loadTesseract().then(function (T) {
@@ -852,12 +946,13 @@ button { cursor: pointer; }
     }).then(function (w) {
       worker = w;
       if (stopped) throw { code: "cancelled" };
-      return w.setParameters({ preserve_interword_spaces: "1" });
+      // One block of text reads Dave's sheets best; the default layout mode tears verses apart.
+      return w.setParameters({ preserve_interword_spaces: "1", tessedit_pageseg_mode: "6" });
     }).then(function () {
       return files.reduce(function (chain, f) {
         return chain.then(function () {
           if (stopped) throw { code: "cancelled" };
-          return worker.recognize(f).then(function (r) { texts.push(r.data.text || ""); });
+          return worker.recognize(f, {}, { text: true, blocks: true }).then(function (r) { texts.push(pageText(r.data)); });
         });
       }, Promise.resolve());
     }).then(function () {
@@ -874,7 +969,7 @@ button { cursor: pointer; }
 
   function readWithClaude() {
     scanCtl = new AbortController();
-    return scanner.json(SCAN_PROMPT, { images: photos.map(function (p) { return p.file; }), signal: scanCtl.signal });
+    return scanner.json(SCAN_PROMPT, { images: photos.map(function (p) { return p.blob || p.file; }), signal: scanCtl.signal });
   }
 
   function readSheet() {
