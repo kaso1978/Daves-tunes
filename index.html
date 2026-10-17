@@ -275,6 +275,43 @@ button { cursor: pointer; }
 .spinner { width: 48px; height: 48px; border-radius: 50%; border: 5px solid var(--accent-soft); border-top-color: var(--accent); animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 14px; background: var(--surface); border: 2px solid var(--edge); border-radius: 16px; padding: 4px; }
+.tab { min-height: 52px; border: 0; border-radius: 12px; background: transparent; font-weight: 700; font-size: 19px; }
+.tab.on { background: var(--accent); color: var(--accent-ink); }
+.song-row > svg { width: 28px; height: 28px; flex: none; color: var(--muted); }
+.song-row.added { border-color: var(--accent); }
+.add-mark { flex: none; width: 48px; height: 48px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); }
+.add-mark svg { width: 26px; height: 26px; }
+.pl-ctx { margin-top: 6px; font-weight: 700; color: var(--accent); font-size: 17px; }
+.parts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--muted); font-size: 16px; font-weight: 700; margin-top: 6px; }
+.part-chip {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 40px; height: 32px; padding: 0 8px;
+  border-radius: 8px; background: var(--accent-soft); color: var(--accent); font-family: var(--font-lyrics); font-weight: 700; font-size: 17px;
+}
+.part-chip.big-chip { min-width: 52px; height: 44px; font-size: 20px; flex: none; }
+.song-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.song-actions .btn { flex: 1 1 150px; padding: 0 12px; gap: 6px; white-space: nowrap; }
+.song-actions + .tip { margin-top: 10px; }
+.lyrics .part + .part { margin-top: 1em; }
+.end-space { flex-direction: column; align-items: stretch; gap: 16px; text-align: center; }
+.end-space p { margin: 0; }
+.end-space .next { width: 100%; }
+.end-space .next svg { width: 26px; height: 26px; }
+.arrange, .pl-page { display: grid; gap: 14px; padding-block: 16px 140px; }
+.sub { margin: 8px 0 0; font-size: 18px; letter-spacing: .02em; }
+.arr-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.arr-row { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 2px solid var(--edge); border-radius: 16px; padding: 10px 12px; flex-wrap: wrap; }
+.arr-name { flex: 1 1 70px; min-width: 0; font-size: 20px; font-weight: 700; display: grid; gap: 2px; overflow-wrap: anywhere; }
+.arr-name .a { font-family: var(--font-lyrics); font-weight: 400; color: var(--muted); font-size: 16px; }
+.arr-btns { display: flex; gap: 6px; margin-left: auto; }
+.pl-song { flex: 1 1 200px; min-width: 0; display: flex; align-items: center; gap: 12px; text-align: left; background: transparent; border: 0; padding: 4px 0; }
+.pl-song .num { flex: none; width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; }
+.chip.wide { min-width: 0; padding: 0 16px; font-family: var(--font-body); font-size: 18px; }
+.mark-parts .chip { font-family: var(--font-body); font-size: 17px; }
+.sheet-list { display: grid; gap: 10px; }
+.sheet-list .btn { justify-content: flex-start; font-size: 20px; }
+.name-form { display: grid; gap: 12px; }
+.name-form input { min-height: 60px; border: 2px solid var(--edge); border-radius: 12px; background: var(--bg); padding: 0 14px; font-size: 20px; width: 100%; }
 .lyrics { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .lyrics .w { border-radius: 6px; }
 .lyrics .w.pressing { background: var(--accent-soft); box-shadow: 0 0 0 4px var(--accent-soft); }
@@ -299,6 +336,7 @@ button { cursor: pointer; }
 
 <div class="wrap" id="app"></div>
 <div class="toast" id="toast" hidden></div>
+<div class="sheet-back" id="menu" hidden><div class="sheet" role="dialog" aria-modal="true"></div></div>
 <div class="sheet-back" id="picker" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="pick-title">
     <p class="sheet-title" id="pick-title"></p>
@@ -457,6 +495,12 @@ button { cursor: pointer; }
 
   var songs = load(KEY, null);
   if (!Array.isArray(songs)) { songs = SAMPLES.slice(); save(KEY, songs); }
+  var PLAYLISTS = "davesTunes.playlists.v1";
+  var playlists = load(PLAYLISTS, []);
+  if (!Array.isArray(playlists)) playlists = [];
+  function savePlaylists() { save(PLAYLISTS, playlists); }
+  function findPlaylist(id) { for (var i = 0; i < playlists.length; i++) if (playlists[i].id === id) return playlists[i]; return null; }
+  function newId(prefix) { return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   var prefs = load(PREFS, { font: 30, speed: 4, speeds: {} });
   if (!prefs.speeds) prefs.speeds = {};
 
@@ -506,6 +550,8 @@ button { cursor: pointer; }
     camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h2.5l1.5-2h6l1.5 2H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="4"/></svg>',
     keys: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>',
     check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+    list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg>',
+    fwd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
     rotate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg>',
     edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>'
   };
@@ -552,10 +598,14 @@ button { cursor: pointer; }
     return out;
   }
   function renderLyrics(text) {
-    var lines = String(text || "").replace(/\r/g, "").split("\n"), html = "";
-    for (var i = 0; i < lines.length; i++) {
+    var lines = String(text || "").replace(/\r/g, "").split("\n");
+    return renderRange(lines, 0, lines.length);
+  }
+  function renderRange(lines, from, to) {
+    var html = "";
+    for (var i = from; i < to; i++) {
       var l = lines[i], cls = lineClass(l), next = lines[i + 1];
-      if (cls === "ln chord" && next != null && next.trim() && lineClass(next) === "ln") {
+      if (cls === "ln chord" && i + 1 < to && next.trim() && lineClass(next) === "ln") {
         html += '<div class="ln sung">' + lyricHtml(next, i + 1, chordMarks(l)) + "</div>"; i++; continue;
       }
       if (cls === "ln" && l.trim()) { html += '<div class="ln">' + lyricHtml(l, i, []) + "</div>"; continue; }
@@ -563,6 +613,49 @@ button { cursor: pointer; }
       html += '<div class="' + cls + '">' + (esc(shown) || "&nbsp;") + "</div>";
     }
     return html;
+  }
+
+  // ---------- Parts of a song (verse, chorus, bridge) ----------
+  // Each [Heading] line starts a part. A part's id is its heading plus which time that heading
+  // appears ("Chorus#2"), so a saved arrangement survives small edits to the words.
+  function parseSections(text) {
+    var lines = String(text || "").replace(/\r/g, "").split("\n"), secs = [], seen = {}, cur = null;
+    for (var i = 0; i < lines.length; i++) {
+      if (lineClass(lines[i]) === "ln section") {
+        var base = lines[i].trim().replace(/^\[|\]$/g, "").replace(/:$/, "").trim();
+        base = base.charAt(0).toUpperCase() + base.slice(1);
+        seen[base] = (seen[base] || 0) + 1;
+        cur = { id: base + "#" + seen[base], base: base, n: seen[base], start: i, end: i + 1 };
+        secs.push(cur);
+      } else if (cur) {
+        cur.end = i + 1;
+      } else if (lines[i].trim()) {
+        cur = { id: "Start#1", base: "Start", n: 1, start: i, end: i + 1 };
+        secs.push(cur);
+      }
+    }
+    secs.forEach(function (s) {
+      var dup = seen[s.base] > 1;
+      s.label = dup ? (/\d$/.test(s.base) ? s.base + " (" + s.n + ")" : s.base + " " + s.n) : s.base;
+      var m = s.base.match(/^([A-Za-z])[A-Za-z]*\s*(\d*)/);
+      s.short = (m ? m[1].toUpperCase() + m[2] : s.base.slice(0, 3)) + (dup && !/\d$/.test(s.base) ? s.n : dup ? "\u2032" : "");
+    });
+    return secs;
+  }
+  // The parts that play, in order: the song's saved arrangement, or every part as written.
+  function playOrder(s) {
+    var secs = parseSections(s.lyrics), byId = {};
+    secs.forEach(function (x) { byId[x.id] = x; });
+    var ids = (s.arrangement || []).filter(function (id) { return byId[id]; });
+    var custom = Array.isArray(s.arrangement);
+    return { secs: secs, byId: byId, custom: custom, order: custom ? ids.map(function (id) { return byId[id]; }) : secs };
+  }
+  function songLyricsHtml(s) {
+    var po = playOrder(s);
+    if (!po.custom || !po.secs.length) return renderLyrics(s.lyrics);
+    if (!po.order.length) return '<p class="empty">Every part is turned off. Tap <b>Arrange</b> to choose what to play.</p>';
+    var lines = String(s.lyrics || "").replace(/\r/g, "").split("\n");
+    return po.order.map(function (x) { return '<div class="part">' + renderRange(lines, x.start, x.end) + "</div>"; }).join("");
   }
 
   // Put `chord` over the word at [col, end) of lyric line `li` ("" removes it), creating or tidying
@@ -616,6 +709,9 @@ button { cursor: pointer; }
     if (view.name === "edit") return renderEdit(view.id ? findSong(view.id) : null, view.draft ? draft : null);
     if (view.name === "add") return renderAdd();
     if (view.name === "scan") return renderScan();
+    if (view.name === "arrange" && findSong(view.id)) return renderArrange(findSong(view.id));
+    if (view.name === "playlist" && findPlaylist(view.pl)) return renderPlaylist(findPlaylist(view.pl));
+    if (view.name === "pl-add" && findPlaylist(view.pl)) return renderPlaylistAdd(findPlaylist(view.pl));
     renderList();
   }
 
@@ -625,12 +721,18 @@ button { cursor: pointer; }
     app.innerHTML =
       '<header class="topbar"><h1>Dave’s Tunes</h1>' +
       '<button class="btn ghost" id="theme" type="button" aria-label="Change light or dark look"></button></header>' +
-      '<label class="search" for="q">' + ICON.search +
-      '<input id="q" type="search" placeholder="Find a song" autocomplete="off" value="' + esc(query) + '"></label>' +
-      '<p class="count" id="count"></p><ul class="songs" id="list"></ul>' +
-      '<button class="btn primary fab" id="add" type="button">' + ICON.plus + 'Add song</button>';
-    var q = document.getElementById("q");
-    q.addEventListener("input", function () { query = q.value; fillList(); });
+      '<div class="tabs" role="tablist">' +
+        '<button class="tab' + (listTab === "songs" ? " on" : "") + '" id="tab-songs" type="button" role="tab" aria-selected="' + (listTab === "songs") + '">Songs</button>' +
+        '<button class="tab' + (listTab === "lists" ? " on" : "") + '" id="tab-lists" type="button" role="tab" aria-selected="' + (listTab === "lists") + '">Playlists</button></div>' +
+      (listTab === "songs"
+        ? '<label class="search" for="q">' + ICON.search +
+          '<input id="q" type="search" placeholder="Find a song" autocomplete="off" value="' + esc(query) + '"></label>' +
+          '<p class="count" id="count"></p><ul class="songs" id="list"></ul>' +
+          '<button class="btn primary fab" id="add" type="button">' + ICON.plus + 'Add song</button>'
+        : '<p class="count" id="count"></p><ul class="songs" id="plists"></ul>' +
+          '<button class="btn primary fab" id="new-pl" type="button">' + ICON.plus + 'New playlist</button>');
+    document.getElementById("tab-songs").addEventListener("click", function () { setTab("songs"); });
+    document.getElementById("tab-lists").addEventListener("click", function () { setTab("lists"); });
     var tb = document.getElementById("theme");
     function showTheme() { tb.innerHTML = THEME_LABEL[prefs.theme || "auto"]; }
     tb.addEventListener("click", function () {
@@ -639,9 +741,14 @@ button { cursor: pointer; }
       save(PREFS, prefs); applyTheme(); showTheme();
     });
     showTheme();
+    if (listTab === "lists") return fillPlaylists();
+    var q = document.getElementById("q");
+    q.addEventListener("input", function () { query = q.value; fillList(); });
     document.getElementById("add").addEventListener("click", function () { go({ name: "add" }); });
     fillList();
   }
+  var listTab = prefs.tab === "lists" ? "lists" : "songs";
+  function setTab(t) { listTab = t; prefs.tab = t; save(PREFS, prefs); renderList(); }
   function fillList() {
     var q = query.trim().toLowerCase();
     var shown = songs.slice().sort(byTitle).filter(function (s) {
@@ -673,19 +780,43 @@ button { cursor: pointer; }
   var cur = null;
   function speedFor(s) { return prefs.speeds[s.id] || prefs.speed; }
 
+  function partsBar(s) {
+    var po = playOrder(s);
+    if (po.secs.length < 2) return "";
+    return '<div class="parts" aria-label="Parts that play">' + (po.custom ? "Plays: " : "Plays as written: ") +
+      (po.order.length ? po.order.map(function (x) { return '<span class="part-chip">' + esc(x.short) + "</span>"; }).join("") : "nothing") + "</div>";
+  }
+  // When a song is opened from a playlist, remember where we are so the end of the song offers the next one.
+  function playlistContext() {
+    if (!view.pl) return null;
+    var pl = findPlaylist(view.pl);
+    if (!pl) return null;
+    var ids = pl.items.filter(function (id) { return findSong(id); });
+    var idx = Math.min(view.idx || 0, ids.length - 1);
+    return { pl: pl, ids: ids, idx: idx, next: ids[idx + 1] ? findSong(ids[idx + 1]) : null };
+  }
+  var plCtx = null;
+
   function renderSong(s) {
     cur = s;
+    plCtx = playlistContext();
     document.title = s.title + " · Dave's Tunes";
     app.innerHTML =
       '<header class="topbar"><button class="btn ghost" id="back" type="button" aria-label="Back to songs">' + ICON.back + "Songs</button>" +
       '<p class="small-title">' + esc(s.title) + "</p>" +
       '<button class="btn ghost" id="edit" type="button">' + ICON.edit + "Edit</button></header>" +
       '<section class="song-head"><div class="names"><h2>' + esc(s.title) + "</h2>" +
-      (s.artist ? '<div class="artist">' + esc(s.artist) + "</div>" : "") + "</div>" +
+      (s.artist ? '<div class="artist">' + esc(s.artist) + "</div>" : "") +
+      (plCtx ? '<div class="pl-ctx">Song ' + (plCtx.idx + 1) + " of " + plCtx.ids.length + " in \u201c" + esc(plCtx.pl.name) + "\u201d</div>" : "") + "</div>" +
       '<div class="plate"><div class="big">' + esc(capoLabel(s)) + '</div><div class="small">' + esc(capoWords(s)) + "</div></div></section>" +
+      partsBar(s) +
+      '<div class="song-actions"><button class="btn" id="arrange" type="button">' + ICON.list + "Arrange</button>" +
+      '<button class="btn" id="to-pl" type="button">' + ICON.plus + "Add to playlist</button></div>" +
       '<p class="tip">Tap the words to start or stop scrolling. Press and hold a word to put a chord over it.</p>' +
-      '<div class="lyrics" id="lyrics">' + renderLyrics(s.lyrics) + "</div>" +
-      '<div class="end-space">End of song</div>' +
+      '<div class="lyrics" id="lyrics">' + songLyricsHtml(s) + "</div>" +
+      '<div class="end-space"><p>End of song</p>' +
+      (plCtx && plCtx.next ? '<button class="btn primary big next" id="next" type="button">Next song: ' + esc(plCtx.next.title) + " " + ICON.fwd + "</button>" : "") +
+      "</div>" +
       '<div class="controls"><div class="row">' +
         '<div class="group"><span class="lbl">Text size</span><div class="pair">' +
           '<button class="sq aa-small" id="fdown" type="button" aria-label="Smaller text">A</button>' +
@@ -702,6 +833,12 @@ button { cursor: pointer; }
     showSpeed();
     document.getElementById("back").addEventListener("click", goBack);
     document.getElementById("edit").addEventListener("click", function () { go({ name: "edit", id: s.id }); });
+    document.getElementById("arrange").addEventListener("click", function () { go({ name: "arrange", id: s.id }); });
+    document.getElementById("to-pl").addEventListener("click", function () { openAddToPlaylist(s); });
+    var nx = document.getElementById("next");
+    if (nx) nx.addEventListener("click", function () {
+      go({ name: "song", id: plCtx.ids[plCtx.idx + 1], pl: plCtx.pl.id, idx: plCtx.idx + 1 }, true);
+    });
     document.getElementById("play").addEventListener("click", togglePlay);
     var lyr = document.getElementById("lyrics");
     lyr.addEventListener("click", function () {
@@ -736,6 +873,209 @@ button { cursor: pointer; }
     document.getElementById("sup").addEventListener("click", function () { setSpeed(speedFor(s) + 1); });
   }
 
+  // ---------- Arrange a song ----------
+  function renderArrange(s) {
+    document.title = "Arrange \u00b7 " + s.title;
+    var po = playOrder(s);
+    var order = po.custom ? po.order : po.secs;
+    var rows = order.map(function (x, i) {
+      return '<li class="arr-row"><span class="part-chip big-chip">' + esc(x.short) + '</span><span class="arr-name">' + esc(x.label) + "</span>" +
+        '<span class="arr-btns"><button class="sq" type="button" data-up="' + i + '" aria-label="Move ' + esc(x.label) + ' earlier"' + (i ? "" : " disabled") + ">\u2191</button>" +
+        '<button class="sq" type="button" data-down="' + i + '" aria-label="Move ' + esc(x.label) + ' later"' + (i < order.length - 1 ? "" : " disabled") + ">\u2193</button>" +
+        '<button class="sq" type="button" data-off="' + i + '" aria-label="Turn off this ' + esc(x.label) + '">\u00d7</button></span></li>';
+    }).join("");
+    app.innerHTML =
+      '<header class="topbar"><button class="btn ghost" id="back" type="button">' + ICON.back + "Done</button>" +
+      '<p class="small-title">Arrange ' + esc(s.title) + "</p></header>" +
+      (po.secs.length
+        ? '<div class="arrange">' +
+            '<h3 class="sub">Plays in this order</h3>' +
+            (rows ? '<ul class="arr-list">' + rows + "</ul>" : '<p class="empty">Nothing will play. Add a part below.</p>') +
+            '<h3 class="sub">Add a part</h3><p class="hint">Tap a part to add it at the end. Add one twice to play it twice.</p>' +
+            '<div class="chips">' + po.secs.map(function (x) {
+              return '<button class="chip wide" type="button" data-add="' + esc(x.id) + '">+ ' + esc(x.label) + "</button>";
+            }).join("") + "</div>" +
+            '<button class="btn" id="reset" type="button">Play the song as written</button>' +
+          "</div>"
+        : '<div class="arrange"><p class="empty">This song has no parts marked yet. Tap <b>Edit</b> on the song and use the <b>+ Verse</b>, <b>+ Chorus</b> and <b>+ Bridge</b> buttons to mark them.</p></div>');
+    document.getElementById("back").addEventListener("click", goBack);
+    if (!po.secs.length) return;
+    var ids = order.map(function (x) { return x.id; });
+    function store(next) {
+      var asWritten = next.length && next.length === po.secs.length && next.every(function (id, i) { return id === po.secs[i].id; });
+      if (asWritten) delete s.arrangement; else s.arrangement = next;
+      save(KEY, songs);
+      var y = window.scrollY; renderArrange(s); window.scrollTo(0, y);
+    }
+    app.querySelector(".arrange").addEventListener("click", function (e) {
+      var t = e.target.closest("button"); if (!t) return;
+      var n = ids.slice(), i;
+      if (t.hasAttribute("data-up")) { i = +t.getAttribute("data-up"); n.splice(i - 1, 0, n.splice(i, 1)[0]); }
+      else if (t.hasAttribute("data-down")) { i = +t.getAttribute("data-down"); n.splice(i + 1, 0, n.splice(i, 1)[0]); }
+      else if (t.hasAttribute("data-off")) { n.splice(+t.getAttribute("data-off"), 1); }
+      else if (t.hasAttribute("data-add")) { n.push(t.getAttribute("data-add")); }
+      else if (t.id === "reset") { n = po.secs.map(function (x) { return x.id; }); }
+      else return;
+      store(n);
+    });
+  }
+
+  // ---------- Playlists ----------
+  function fillPlaylists() {
+    var list = document.getElementById("plists");
+    document.getElementById("count").textContent = playlists.length + (playlists.length === 1 ? " playlist" : " playlists");
+    list.innerHTML = playlists.length ? playlists.map(function (pl) {
+      var n = pl.items.filter(function (id) { return findSong(id); }).length;
+      return '<li><button class="song-row" type="button" data-pl="' + esc(pl.id) + '"><span class="info"><span class="t">' + esc(pl.name) +
+        '</span><span class="a">' + n + (n === 1 ? " song" : " songs") + "</span></span>" + ICON.fwd + "</button></li>";
+    }).join("") : '<li class="empty">No playlists yet. Tap <b>New playlist</b> to make one, like \u201cSunday service\u201d.</li>';
+    list.querySelectorAll("[data-pl]").forEach(function (b) {
+      b.addEventListener("click", function () { go({ name: "playlist", pl: b.getAttribute("data-pl") }); });
+    });
+    document.getElementById("new-pl").addEventListener("click", function () {
+      askName("New playlist", "", "Create", function (name) {
+        var pl = { id: newId("p-"), name: name, items: [] };
+        playlists.push(pl); savePlaylists();
+        go({ name: "playlist", pl: pl.id });
+      });
+    });
+  }
+
+  function renderPlaylist(pl) {
+    document.title = pl.name + " \u00b7 Dave's Tunes";
+    var items = pl.items.map(function (id, i) { return { s: findSong(id), i: i }; }).filter(function (x) { return x.s; });
+    app.innerHTML =
+      '<header class="topbar"><button class="btn ghost" id="back" type="button">' + ICON.back + "Playlists</button>" +
+      '<p class="small-title">' + esc(pl.name) + "</p>" +
+      '<button class="btn ghost" id="rename" type="button">' + ICON.edit + "Rename</button></header>" +
+      '<div class="pl-page">' +
+        (items.length ? '<button class="btn primary big" id="play-all" type="button">' + ICON.play + "Play from the start</button>" : "") +
+        '<ul class="arr-list">' + (items.length ? items.map(function (x, k) {
+          var po = playOrder(x.s);
+          return '<li class="arr-row"><button class="pl-song" type="button" data-play="' + k + '"><span class="num">' + (k + 1) + "</span>" +
+            '<span class="arr-name"><b>' + esc(x.s.title) + "</b>" +
+            (po.custom ? '<span class="a">' + po.order.map(function (o) { return esc(o.short); }).join(" \u00b7 ") + "</span>" : "") + "</span>" +
+            '<span class="capo-chip">' + esc(capoLabel(x.s)) + "</span></button>" +
+            '<span class="arr-btns"><button class="sq" type="button" data-up="' + x.i + '" aria-label="Move earlier"' + (k ? "" : " disabled") + ">\u2191</button>" +
+            '<button class="sq" type="button" data-down="' + x.i + '" aria-label="Move later"' + (k < items.length - 1 ? "" : " disabled") + ">\u2193</button>" +
+            '<button class="sq" type="button" data-rm="' + x.i + '" aria-label="Take ' + esc(x.s.title) + ' off this playlist">\u00d7</button></span></li>';
+        }).join("") : '<li class="empty">This playlist is empty. Tap <b>Add songs</b> to fill it.</li>') + "</ul>" +
+        '<button class="btn big" id="add-songs" type="button">' + ICON.plus + "Add songs</button>" +
+        '<div class="danger-zone"><button class="btn danger" id="del-pl" type="button">Delete this playlist</button>' +
+          '<div class="confirm" id="confirm" hidden><p>Delete the playlist \u201c' + esc(pl.name) + '\u201d? Your songs stay in Dave\u2019s Tunes.</p>' +
+          '<div class="form-actions"><button class="btn danger" id="del-yes" type="button">Yes, delete it</button>' +
+          '<button class="btn" id="del-no" type="button">Keep it</button></div></div></div>' +
+      "</div>";
+    document.getElementById("back").addEventListener("click", goBack);
+    document.getElementById("rename").addEventListener("click", function () {
+      askName("Rename playlist", pl.name, "Save", function (name) { pl.name = name; savePlaylists(); renderPlaylist(pl); });
+    });
+    var pa = document.getElementById("play-all");
+    var ids = items.map(function (x) { return x.s.id; });
+    if (pa) pa.addEventListener("click", function () { go({ name: "song", id: ids[0], pl: pl.id, idx: 0 }); });
+    document.getElementById("add-songs").addEventListener("click", function () { go({ name: "pl-add", pl: pl.id }); });
+    var box = document.getElementById("confirm"), del = document.getElementById("del-pl");
+    del.addEventListener("click", function () { box.hidden = false; del.hidden = true; box.scrollIntoView({ block: "center" }); });
+    document.getElementById("del-no").addEventListener("click", function () { box.hidden = true; del.hidden = false; });
+    document.getElementById("del-yes").addEventListener("click", function () {
+      playlists = playlists.filter(function (x) { return x.id !== pl.id; }); savePlaylists();
+      toast("Playlist deleted"); goBack();
+    });
+    app.querySelectorAll("[data-play]").forEach(function (b) {
+      b.addEventListener("click", function () { var k = +b.getAttribute("data-play"); go({ name: "song", id: ids[k], pl: pl.id, idx: k }); });
+    });
+    function move(from, to) { var it = pl.items.splice(from, 1)[0]; pl.items.splice(to, 0, it); savePlaylists(); var y = window.scrollY; renderPlaylist(pl); window.scrollTo(0, y); }
+    var real = items.map(function (x) { return x.i; });
+    app.querySelectorAll("[data-up]").forEach(function (b) { b.addEventListener("click", function () { var i = +b.getAttribute("data-up"); move(i, real[real.indexOf(i) - 1]); }); });
+    app.querySelectorAll("[data-down]").forEach(function (b) { b.addEventListener("click", function () { var i = +b.getAttribute("data-down"); move(i, real[real.indexOf(i) + 1]); }); });
+    app.querySelectorAll("[data-rm]").forEach(function (b) {
+      b.addEventListener("click", function () { pl.items.splice(+b.getAttribute("data-rm"), 1); savePlaylists(); var y = window.scrollY; renderPlaylist(pl); window.scrollTo(0, y); });
+    });
+  }
+
+  var plQuery = "";
+  function renderPlaylistAdd(pl) {
+    document.title = "Add songs \u00b7 " + pl.name;
+    app.innerHTML =
+      '<header class="topbar"><button class="btn ghost" id="back" type="button">' + ICON.back + "Done</button>" +
+      '<p class="small-title">Add to ' + esc(pl.name) + "</p></header>" +
+      '<label class="search" for="pq">' + ICON.search + '<input id="pq" type="search" placeholder="Find a song" autocomplete="off" value="' + esc(plQuery) + '"></label>' +
+      '<p class="count">Tap a song to add it to the end of the playlist.</p><ul class="songs" id="pl-pick"></ul>';
+    document.getElementById("back").addEventListener("click", goBack);
+    var pq = document.getElementById("pq");
+    function fill() {
+      var q = plQuery.trim().toLowerCase();
+      var shown = songs.slice().sort(byTitle).filter(function (s) { return !q || (s.title + " " + (s.artist || "")).toLowerCase().indexOf(q) !== -1; });
+      var list = document.getElementById("pl-pick");
+      list.innerHTML = shown.length ? shown.map(function (s) {
+        var n = pl.items.filter(function (id) { return id === s.id; }).length;
+        return '<li><button class="song-row' + (n ? " added" : "") + '" type="button" data-id="' + esc(s.id) + '"><span class="info"><span class="t">' + esc(s.title) + "</span>" +
+          '<span class="a">' + (n ? (n === 1 ? "In this playlist" : "In this playlist " + n + " times") : esc(s.artist || "")) + "</span></span>" +
+          '<span class="add-mark">' + (n ? ICON.check : ICON.plus) + "</span></button></li>";
+      }).join("") : '<li class="empty">No songs match \u201c' + esc(plQuery.trim()) + "\u201d.</li>";
+      list.querySelectorAll("[data-id]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var s = findSong(b.getAttribute("data-id"));
+          pl.items.push(s.id); savePlaylists(); toast("Added " + s.title); fill();
+        });
+      });
+    }
+    pq.addEventListener("input", function () { plQuery = pq.value; fill(); });
+    fill();
+  }
+
+  // ---------- Bottom sheets: name a playlist, or add a song to one ----------
+  function openSheet(html, onClick) {
+    var back = document.getElementById("menu");
+    back.querySelector(".sheet").innerHTML = html;
+    back.hidden = false;
+    function close() { back.hidden = true; back.onclick = null; }
+    back.onclick = function (e) {
+      if (e.target === back || e.target.closest("[data-close]")) return close();
+      onClick(e, close);
+    };
+    return back;
+  }
+  function askName(title, value, action, done) {
+    var back = openSheet(
+      '<p class="sheet-title">' + esc(title) + "</p>" +
+      '<form id="name-form" class="name-form"><input id="pl-name" maxlength="60" autocomplete="off" placeholder="Name, like Sunday service" value="' + esc(value) + '">' +
+      '<p class="error" id="name-err" hidden>Give the playlist a name.</p>' +
+      '<div class="form-actions"><button class="btn primary" type="submit">' + esc(action) + '</button><button class="btn" type="button" data-close>Cancel</button></div></form>',
+      function () {});
+    var input = document.getElementById("pl-name");
+    input.focus();
+    document.getElementById("name-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var name = input.value.trim();
+      if (!name) { document.getElementById("name-err").hidden = false; return; }
+      back.hidden = true; back.onclick = null;
+      done(name);
+    });
+  }
+  function openAddToPlaylist(s) {
+    stopScroll();
+    openSheet(
+      '<p class="sheet-title">Add <q>' + esc(s.title) + "</q> to a playlist</p>" +
+      (playlists.length ? '<div class="sheet-list">' + playlists.map(function (pl) {
+        return '<button class="btn" type="button" data-to="' + esc(pl.id) + '">' + esc(pl.name) + "</button>";
+      }).join("") + "</div>" : '<p class="hint">You don\u2019t have any playlists yet.</p>') +
+      '<div class="form-actions"><button class="btn primary" type="button" id="sheet-new">' + ICON.plus + "New playlist</button>" +
+      '<button class="btn" type="button" data-close>Cancel</button></div>' +
+      '<p class="hint">The song plays with its arrangement. Change that with <b>Arrange</b>.</p>',
+      function (e, close) {
+        var to = e.target.closest("[data-to]");
+        if (to) { var pl = findPlaylist(to.getAttribute("data-to")); pl.items.push(s.id); savePlaylists(); close(); toast("Added to " + pl.name); return; }
+        if (e.target.closest("#sheet-new")) {
+          close();
+          askName("New playlist", "", "Create and add", function (name) {
+            var pl = { id: newId("p-"), name: name, items: [s.id] };
+            playlists.push(pl); savePlaylists(); toast("Added to " + name);
+          });
+        }
+      });
+  }
+
   // ---------- Chord picker (opened by pressing and holding a word) ----------
   var justPicked = false;
   var PICK_CHORDS = ["C", "D", "E", "F", "G", "A", "B", "Am", "Bm", "Dm", "Em", "F#m", "C7", "D7", "E7", "G7", "A7", "B7"];
@@ -761,7 +1101,7 @@ button { cursor: pointer; }
       delete s.sample;
       save(KEY, songs);
       close();
-      document.getElementById("lyrics").innerHTML = renderLyrics(s.lyrics);
+      document.getElementById("lyrics").innerHTML = songLyricsHtml(s);
       window.scrollTo(0, y);
       toast(chord ? chord + " added over \u201c" + word + "\u201d" : "Chord removed");
     }
@@ -825,7 +1165,10 @@ button { cursor: pointer; }
     var y = window.scrollY;
     if (Math.abs(y - pos) > 3) pos = y;  // he dragged the page; carry on from there
     pos += pxPerSecond() * dt;
-    if (pos >= maxScroll()) { window.scrollTo(0, maxScroll()); stopScroll(); return; }
+    // Stop when the end of the song reaches the middle of the screen, so the "Next song" button shows.
+    var endEl = document.querySelector(".end-space"), stopAt = maxScroll();
+    if (endEl) stopAt = Math.min(stopAt, endEl.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.45);
+    if (pos >= stopAt) { stopScroll(); return; }
     window.scrollTo(0, pos);
     raf = requestAnimationFrame(tick);
   }
@@ -837,7 +1180,9 @@ button { cursor: pointer; }
   }
   function startScroll() {
     if (playing) return;
-    if (window.scrollY >= maxScroll() - 2) window.scrollTo(0, 0);  // finished last time: start over
+    var endEl = document.querySelector(".end-space");
+    var stopAt = endEl ? Math.min(maxScroll(), endEl.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.45) : maxScroll();
+    if (window.scrollY >= stopAt - 2) window.scrollTo(0, 0);  // finished last time: start over
     playing = true; lastT = 0; pos = window.scrollY;
     setPlayIcon();
     raf = requestAnimationFrame(tick);
@@ -1214,7 +1559,10 @@ button { cursor: pointer; }
           '<input id="f-chord" autocapitalize="characters" autocomplete="off" placeholder="Tap one above or type it, like C or F#m" value="' + esc(s.chord) + '"></div>' +
         '<div class="showas"><span class="hint">Shows at the top of the song as</span><span class="preview" id="f-preview"></span></div>' +
         '<div class="field"><label for="f-lyrics">Words and chords</label>' +
-          '<span class="hint">Put chords on their own line above the words. Lines like [Chorus] become small headings.</span>' +
+          '<span class="hint">Put chords on their own line above the words. To mark a part, tap at the start of its first line, then tap what it is.</span>' +
+          '<div class="chips mark-parts" id="mark-parts">' +
+            ["Verse", "Chorus", "Bridge", "Intro", "Outro"].map(function (k) { return '<button class="chip" type="button" data-part="' + k + '">+ ' + k + "</button>"; }).join("") +
+          "</div>" +
           '<textarea id="f-lyrics" spellcheck="false">' + esc(s.lyrics) + "</textarea></div>" +
         '<p class="error" id="f-error" role="alert" hidden></p>' +
         (isNew ? "" :
@@ -1245,6 +1593,29 @@ button { cursor: pointer; }
       chord.value = c.getAttribute("data-chord"); sync();
     });
     chord.addEventListener("input", sync);
+    // Insert a part heading at the start of the line the cursor is on (numbering verses for you).
+    var ta = document.getElementById("f-lyrics"), lastCaret = 0;
+    ta.addEventListener("blur", function () { lastCaret = ta.selectionStart; });
+    document.getElementById("mark-parts").addEventListener("pointerdown", function (e) { if (e.target.closest(".chip")) { lastCaret = ta.selectionStart; e.preventDefault(); } });
+    document.getElementById("mark-parts").addEventListener("click", function (e) {
+      var b = e.target.closest("[data-part]"); if (!b) return;
+      var kind = b.getAttribute("data-part"), text = ta.value;
+      var at = Math.min(lastCaret, text.length), ls = text.lastIndexOf("\n", at - 1) + 1;
+      var le = text.indexOf("\n", ls); if (le === -1) le = text.length;
+      var label = kind;
+      if (kind === "Verse") label = "Verse " + ((text.match(/^\s*\[verse\b/gim) || []).length + 1);
+      var head = "[" + label + "]";
+      var line = text.slice(ls, le);
+      // If the line just above is already a heading, change that heading instead of stacking a second one.
+      var ps = ls > 0 ? text.lastIndexOf("\n", ls - 2) + 1 : -1;
+      if (ps >= 0 && lineClass(text.slice(ps, ls - 1)) === "ln section") { le = ls - 1; ls = ps; line = text.slice(ls, le); }
+      if (lineClass(line) === "ln section") text = text.slice(0, ls) + head + text.slice(le);
+      else text = text.slice(0, ls) + head + "\n" + text.slice(ls);
+      ta.value = text;
+      var caret = ls + head.length + 1;
+      ta.focus(); ta.setSelectionRange(caret, caret); lastCaret = caret;
+      toast(label + " marked");
+    });
     sync();
 
     var leave = document.getElementById("leave");
@@ -1286,6 +1657,8 @@ button { cursor: pointer; }
       document.getElementById("del-no").addEventListener("click", function () { box.hidden = true; del.hidden = false; });
       document.getElementById("del-yes").addEventListener("click", function () {
         songs = songs.filter(function (x) { return x.id !== view.id; });
+        playlists.forEach(function (pl) { pl.items = pl.items.filter(function (id) { return id !== view.id; }); });
+        savePlaylists();
         delete prefs.speeds[view.id]; save(PREFS, prefs);
         save(KEY, songs);
         toast("Song deleted");
