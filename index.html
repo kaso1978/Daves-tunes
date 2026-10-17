@@ -283,6 +283,11 @@ button { cursor: pointer; }
 .tag.check { color: #8a4b00; border-color: #e0a54a; background: #fff3dd; }
 :root[data-theme="dark"] .tag.check { color: #ffcf8a; border-color: #8a5a1a; background: #2c2010; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tag.check { color: #ffcf8a; border-color: #8a5a1a; background: #2c2010; } }
+.update-bar { position: fixed; z-index: 25; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 8px);
+  width: min(720px, calc(100% - 24px)); display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 14px;
+  background: var(--surface); border: 3px solid var(--accent); border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+.update-bar p { margin: 0; flex: 1 1 200px; font-size: 18px; }
+.update-bar .btn { flex: 0 0 auto; }
 .banner.install { display: grid; background: var(--surface); border: 2px solid var(--accent); margin-top: 12px; }
 .banner .share-ico svg { width: 22px; height: 22px; vertical-align: -4px; color: var(--accent); }
 .banner.warn { display: grid; background: var(--surface); border: 2px solid #e0a54a; }
@@ -345,7 +350,15 @@ button { cursor: pointer; }
 .pl-song { flex: 1 1 200px; min-width: 0; display: flex; align-items: center; gap: 12px; text-align: left; background: transparent; border: 0; padding: 4px 0; }
 .pl-song .num { flex: none; width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; }
 .chip.wide { min-width: 0; padding: 0 16px; font-family: var(--font-body); font-size: 18px; }
-.mark-parts .chip { font-family: var(--font-body); font-size: 17px; }
+.parts-ed { display: grid; gap: 14px; }
+.part-ed { display: grid; gap: 8px; border: 2px solid var(--edge); border-left: 8px solid var(--accent); border-radius: 14px; padding: 10px; background: var(--bg); }
+.part-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.part-name { font-size: 20px; min-height: 52px; color: var(--accent); }
+.part-head .join { font-size: 16px; color: var(--muted); }
+.field textarea.part-text { min-height: 120px; overflow: hidden; resize: none; }
+.part-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.part-tools .btn { flex: 1 1 200px; font-size: 17px; min-height: 52px; padding: 0 12px; }
+.sheet-list.kinds { grid-template-columns: 1fr 1fr; }
 .sheet-list { display: grid; gap: 10px; }
 .sheet-list .btn { justify-content: flex-start; font-size: 20px; }
 .name-form { display: grid; gap: 12px; }
@@ -823,6 +836,41 @@ button { cursor: pointer; }
   }
 
   // ---------- Parts of a song (verse, chorus, bridge) ----------
+  // The editor works on a list of parts ({name, text}); the song itself stores them as [Name] lines.
+  function textToParts(text) {
+    var lines = String(text || "").replace(/\r/g, "").split("\n"), out = [], cur = null;
+    lines.forEach(function (l) {
+      if (lineClass(l) === "ln section") {
+        cur = { name: l.trim().replace(/^\[|\]$/g, "").replace(/:$/, "").trim(), text: "" }; out.push(cur); return;
+      }
+      if (!cur) { cur = { name: "", text: "" }; out.push(cur); }
+      cur.text += (cur.text || cur.started ? "\n" : "") + l; cur.started = true;
+    });
+    out.forEach(function (p) { delete p.started; p.text = trimBlank(p.text); });
+    out = out.filter(function (p) { return p.name || p.text.trim(); });
+    return out.length ? out : [{ name: "", text: "" }];
+  }
+  function partsToText(parts) {
+    return parts.filter(function (p) { return p.name || p.text.trim(); }).map(function (p) {
+      return (p.name ? "[" + p.name + "]" + (p.text.trim() ? "\n" : "") : "") + trimBlank(p.text);
+    }).join("\n\n");
+  }
+  function trimBlank(t) { return String(t || "").replace(/^(\s*\n)+/, "").replace(/\s+$/, ""); }
+  function firstLine(t) {
+    var ls = String(t || "").split("\n").filter(function (l) { return l.trim() && lineClass(l) === "ln"; });
+    return ls.length ? ls[0].trim() : "";
+  }
+  // Verses are numbered in the order they come; other kinds keep their names. Only the first part can
+  // go without a name (anything after an unnamed heading would join the part above when saved).
+  function renumberVerses(parts) {
+    var n = 0;
+    parts.forEach(function (p, i) {
+      if (i > 0 && !p.name) p.name = "Verse";
+      if (/^verse\b/i.test(p.name)) p.name = "Verse " + (++n);
+    });
+  }
+  function nextKind(name) { return !name || /^verse\b/i.test(name) ? "Verse" : name; }
+
   // Each [Heading] line starts a part. A part's id is its heading plus which time that heading
   // appears ("Chorus#2"), so a saved arrangement survives small edits to the words.
   function parseSections(text) {
@@ -1831,7 +1879,8 @@ button { cursor: pointer; }
     var isNew = !s;
     s = s || fromDraft || { title: "", artist: "", capo: 0, chord: "", lyrics: "" };
     document.title = (isNew ? "Add song" : "Edit song") + " · Dave's Tunes";
-    var start = JSON.stringify([s.title, s.artist, Number(s.capo) || 0, s.chord, s.lyrics]);
+    var parts = textToParts(s.lyrics);
+    var start = JSON.stringify([s.title, s.artist, Number(s.capo) || 0, s.chord, partsToText(parts)]);
     var needsCheck = !!((fromDraft && fromDraft.scanned) || s.unverified);
     var chips = COMMON_CHORDS.map(function (c) {
       return '<button class="chip" type="button" data-chord="' + c + '">' + c + "</button>";
@@ -1860,12 +1909,11 @@ button { cursor: pointer; }
           '<div class="chips" id="chips">' + chips + "</div>" +
           '<input id="f-chord" autocapitalize="characters" autocomplete="off" placeholder="Tap one above or type it, like C or F#m" value="' + esc(s.chord) + '"></div>' +
         '<div class="showas"><span class="hint">Shows at the top of the song as</span><span class="preview" id="f-preview"></span></div>' +
-        '<div class="field"><label for="f-lyrics">Words and chords</label>' +
-          '<span class="hint">Put chords on their own line above the words. To mark a part, tap at the start of its first line, then tap what it is.</span>' +
-          '<div class="chips mark-parts" id="mark-parts">' +
-            ["Verse", "Chorus", "Bridge", "Intro", "Outro"].map(function (k) { return '<button class="chip" type="button" data-part="' + k + '">+ ' + k + "</button>"; }).join("") +
-          "</div>" +
-          '<textarea id="f-lyrics" spellcheck="false">' + esc(s.lyrics) + "</textarea></div>" +
+        '<div class="field"><span class="label">Words and chords</span>' +
+          '<span class="hint">Each part of the song has its own box, with chords on their own line above the words. ' +
+          "To make a new part, select the lines that belong in it and tap <b>Move to a new part</b>.</span>" +
+          '<div class="parts-ed" id="parts-ed"></div>' +
+          '<button class="btn" id="add-part" type="button">' + ICON.plus + "Add a part at the end</button></div>" +
         '<p class="error" id="f-error" role="alert" hidden></p>' +
         (isNew ? "" :
           '<div class="danger-zone"><button class="btn danger" id="del" type="button">Delete this song</button>' +
@@ -1900,7 +1948,7 @@ button { cursor: pointer; }
     }
     function current() {
       return [document.getElementById("f-title").value.trim(), document.getElementById("f-artist").value.trim(),
-        capoVal, chord.value.trim(), document.getElementById("f-lyrics").value.replace(/\s+$/, "")];
+        capoVal, chord.value.trim(), partsToText(parts)];
     }
     function sync() {
       capoOut.textContent = capoVal === 0 ? "No capo" : capoVal;
@@ -1916,29 +1964,91 @@ button { cursor: pointer; }
       chord.value = c.getAttribute("data-chord"); sync();
     });
     chord.addEventListener("input", sync);
-    // Insert a part heading at the start of the line the cursor is on (numbering verses for you).
-    var ta = document.getElementById("f-lyrics"), lastCaret = 0;
-    ta.addEventListener("blur", function () { lastCaret = ta.selectionStart; });
-    document.getElementById("mark-parts").addEventListener("pointerdown", function (e) { if (e.target.closest(".chip")) { lastCaret = ta.selectionStart; e.preventDefault(); } });
-    document.getElementById("mark-parts").addEventListener("click", function (e) {
-      var b = e.target.closest("[data-part]"); if (!b) return;
-      var kind = b.getAttribute("data-part"), text = ta.value;
-      var at = Math.min(lastCaret, text.length), ls = text.lastIndexOf("\n", at - 1) + 1;
-      var le = text.indexOf("\n", ls); if (le === -1) le = text.length;
-      var label = kind;
-      if (kind === "Verse") label = "Verse " + ((text.match(/^\s*\[verse\b/gim) || []).length + 1);
-      var head = "[" + label + "]";
-      var line = text.slice(ls, le);
-      // If the line just above is already a heading, change that heading instead of stacking a second one.
-      var ps = ls > 0 ? text.lastIndexOf("\n", ls - 2) + 1 : -1;
-      if (ps >= 0 && lineClass(text.slice(ps, ls - 1)) === "ln section") { le = ls - 1; ls = ps; line = text.slice(ls, le); }
-      if (lineClass(line) === "ln section") text = text.slice(0, ls) + head + text.slice(le);
-      else text = text.slice(0, ls) + head + "\n" + text.slice(ls);
-      ta.value = text;
-      var caret = ls + head.length + 1;
-      ta.focus(); ta.setSelectionRange(caret, caret); lastCaret = caret;
-      toast(label + " marked");
+    // Part-by-part editing: every part is its own box, and selected lines can be moved into a new part.
+    var partsEd = document.getElementById("parts-ed"), sel = {};
+    function drawParts(focusIdx) {
+      partsEd.innerHTML = parts.map(function (pt, i) {
+        var gaps = /\S[ \t]*\n[ \t]*\n[ \t]*\S/.test(pt.text);
+        return '<section class="part-ed" data-i="' + i + '">' +
+          '<div class="part-head"><button class="btn part-name" type="button" data-act="name" aria-label="What this part is: ' + esc(pt.name || "no name") + '">' +
+            esc(pt.name || "No name") + ' <span aria-hidden="true">\u25be</span></button>' +
+            (i > 0 ? '<button class="btn ghost join" type="button" data-act="join">Join with part above</button>' : "") + "</div>" +
+          '<textarea class="part-text" spellcheck="false" data-i="' + i + '" aria-label="Words for ' + esc(pt.name || "this part") + '">' + esc(pt.text) + "</textarea>" +
+          '<div class="part-tools"><button class="btn" type="button" data-act="split">' + ICON.plus + "Move to a new part</button>" +
+            (gaps ? '<button class="btn" type="button" data-act="gaps">Split at the gaps</button>' : "") + "</div></section>";
+      }).join("");
+      partsEd.querySelectorAll(".part-text").forEach(fitBox);
+      if (focusIdx != null) {
+        var box = partsEd.querySelector('.part-ed[data-i="' + focusIdx + '"]');
+        if (box) box.scrollIntoView({ block: "center" });
+      }
+    }
+    function fitBox(t) { t.style.height = "auto"; t.style.height = Math.max(120, t.scrollHeight + 4) + "px"; }
+    function remember(t) { sel[t.getAttribute("data-i")] = [t.selectionStart, t.selectionEnd]; }
+    partsEd.addEventListener("input", function (e) {
+      var t = e.target.closest(".part-text"); if (!t) return;
+      parts[Number(t.getAttribute("data-i"))].text = t.value; fitBox(t); remember(t);
     });
+    ["select", "keyup", "pointerup", "touchend", "focusout"].forEach(function (ev) {
+      partsEd.addEventListener(ev, function (e) { var t = e.target.closest && e.target.closest(".part-text"); if (t) remember(t); });
+    });
+    document.addEventListener("selectionchange", function () {
+      var t = document.activeElement; if (t && t.classList && t.classList.contains("part-text")) remember(t);
+    });
+    // Keep the text selection alive while a part button is pressed.
+    partsEd.addEventListener("pointerdown", function (e) { if (e.target.closest("[data-act=split]")) e.preventDefault(); });
+    partsEd.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-act]"); if (!b) return;
+      var i = Number(b.closest(".part-ed").getAttribute("data-i")), pt = parts[i], act = b.getAttribute("data-act");
+      if (act === "name") return pickPartName(i);
+      if (act === "join") {
+        var above = parts[i - 1];
+        above.text = trimBlank(above.text) + (above.text.trim() && pt.text.trim() ? "\n\n" : "") + trimBlank(pt.text);
+        parts.splice(i, 1); renumberVerses(parts); drawParts(i - 1); toast("Joined with the part above"); return;
+      }
+      if (act === "gaps") {
+        var chunks = pt.text.split(/\n[ \t]*\n+/).map(trimBlank).filter(function (c) { return c.trim(); });
+        var made = chunks.map(function (c, k) { return { name: k === 0 ? pt.name : nextKind(pt.name), text: c }; });
+        parts.splice.apply(parts, [i, 1].concat(made)); renumberVerses(parts); drawParts(i);
+        toast("Split into " + made.length + " parts. Tap a name to change what it is."); return;
+      }
+      if (act === "split") {
+        var t = partsEd.querySelector('.part-text[data-i="' + i + '"]'), r = sel[i] || [t.selectionStart, t.selectionEnd];
+        var text = pt.text, a = Math.min(r[0], r[1]), z = Math.max(r[0], r[1]);
+        // Widen the selection to whole lines; with nothing selected, move from the cursor's line to the end.
+        var ls = text.lastIndexOf("\n", a - 1) + 1, le;
+        if (z > a) { if (text.charAt(z - 1) === "\n") z--; le = text.indexOf("\n", z); if (le === -1) le = text.length; }
+        else le = text.length;
+        var before = trimBlank(text.slice(0, ls)), mid = trimBlank(text.slice(ls, le)), after = trimBlank(text.slice(le));
+        if (!mid.trim()) { toast("Select the lines for the new part first"); return; }
+        var out = [], target;
+        if (before.trim()) out.push({ name: pt.name, text: before });
+        target = out.length;
+        out.push({ name: before.trim() ? (pt.name && /^chorus/i.test(pt.name) ? "Verse" : "Chorus") : pt.name, text: mid });
+        if (after.trim()) out.push({ name: nextKind(pt.name), text: after });
+        parts.splice.apply(parts, [i, 1].concat(out)); renumberVerses(parts); drawParts(i + target);
+        pickPartName(i + target);
+      }
+    });
+    document.getElementById("add-part").addEventListener("click", function () {
+      parts.push({ name: "Verse", text: "" }); renumberVerses(parts); drawParts(parts.length - 1);
+      pickPartName(parts.length - 1);
+    });
+    function pickPartName(i) {
+      var kinds = ["Verse", "Chorus", "Bridge", "Intro", "Outro", "Tag", "Ending"];
+      var curKind = (parts[i].name.match(/^[A-Za-z]+/) || [""])[0].toLowerCase();
+      openSheet('<p class="sheet-title">What is this part?</p>' +
+        '<p class="tip">' + esc(firstLine(parts[i].text)) + "</p>" +
+        '<div class="sheet-list kinds">' + kinds.map(function (k) {
+          return '<button class="btn' + (k.toLowerCase() === curKind ? " primary" : "") + '" type="button" data-kind="' + k + '">' + k + "</button>";
+        }).join("") + (i === 0 ? '<button class="btn" type="button" data-kind="">No name</button>' : "") + "</div>" +
+        '<button class="btn" type="button" data-close>Cancel</button>',
+        function (e, close) {
+          var b = e.target.closest("[data-kind]"); if (!b) return;
+          parts[i].name = b.getAttribute("data-kind"); renumberVerses(parts); close(); drawParts(i);
+        });
+    }
+    drawParts();
     sync();
 
     var leave = document.getElementById("leave");
@@ -2011,9 +2121,37 @@ button { cursor: pointer; }
   render();
 
   // Offline support when hosted as an installed app (not available inside every viewer, so failures are ignored)
+  // When a newer version has downloaded, a banner offers to switch to it. Songs, playlists and photos
+  // live in the browser's storage, not in the app files, so updating never touches them.
   try {
-    if ("serviceWorker" in navigator && location.protocol === "https:") {
-      navigator.serviceWorker.register("sw.js").catch(function () {});
+    if ("serviceWorker" in navigator && window.isSecureContext) {
+      var updating = false;
+      navigator.serviceWorker.addEventListener("controllerchange", function () { if (updating) location.reload(); });
+      navigator.serviceWorker.register("sw.js").then(function (reg) {
+        function ready() { if (reg.waiting && navigator.serviceWorker.controller) showUpdate(reg); }
+        ready();
+        reg.addEventListener("updatefound", function () {
+          var w = reg.installing; if (!w) return;
+          w.addEventListener("statechange", function () { if (w.state === "installed") ready(); });
+        });
+        // An installed app is often just resumed rather than reopened, so look for updates whenever it comes back.
+        document.addEventListener("visibilitychange", function () {
+          if (document.visibilityState === "visible") reg.update().catch(function () {});
+        });
+      }).catch(function () {});
+      function showUpdate(reg) {
+        if (document.getElementById("update-bar")) return;
+        var bar = document.createElement("div");
+        bar.id = "update-bar"; bar.className = "update-bar"; bar.setAttribute("role", "status");
+        bar.innerHTML = "<p><b>A new version is ready.</b> Your songs stay as they are.</p>" +
+          '<button class="btn primary" id="update-now" type="button">Update now</button>';
+        document.body.appendChild(bar);
+        document.getElementById("update-now").addEventListener("click", function () {
+          updating = true; this.disabled = true; this.textContent = "Updating\u2026";
+          if (reg.waiting) reg.waiting.postMessage("update"); else location.reload();
+          setTimeout(function () { location.reload(); }, 4000);
+        });
+      }
     }
   } catch (e) {}
 })();
