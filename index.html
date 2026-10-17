@@ -429,6 +429,7 @@ button { cursor: pointer; }
   function save(key, val) {
     mem[key] = val;
     try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
+    if (key === KEY || key === "davesTunes.playlists.v1") onDataSaved();
   }
 
   // Traditional / public-domain example songs
@@ -579,7 +580,9 @@ button { cursor: pointer; }
       });
     });
   }
-  function photosPut(id, blobs) { return photoTx("readwrite", function (st) { return st.put(blobs, id); }).catch(function () {}); }
+  function photosPut(id, blobs) {
+    return photoTx("readwrite", function (st) { return st.put(blobs, id); }).catch(function () {});
+  }
   function photosGet(id) { return photoTx("readonly", function (st) { return st.get(id); }).catch(function () { return null; }); }
   function photosDel(id) { return photoTx("readwrite", function (st) { return st.delete(id); }).catch(function () {}); }
   // Keep a smaller copy for checking against later.
@@ -1048,6 +1051,7 @@ button { cursor: pointer; }
       '<header class="topbar"><button class="btn ghost" id="back" type="button">' + ICON.back + "Songs</button>" +
       '<p class="small-title">Share songbook</p></header>' +
       '<div class="book-page">' +
+        '<div id="sync-box">' + syncCardHtml() + "</div>" +
         '<section class="book-card"><h3 class="sub">Send the songbook to another phone</h3>' +
           "<p>Makes one file with every song, playlist and sheet photo. Send it by message or email, then open Dave\u2019s Tunes on the other phone and load it there.</p>" +
           '<button class="btn primary big" id="export" type="button">' + ICON.share + "Send songbook</button></section>" +
@@ -1057,6 +1061,7 @@ button { cursor: pointer; }
           '<input class="vh" id="import-file" type="file" accept=".json,application/json"></section>' +
       "</div>";
     document.getElementById("back").addEventListener("click", goBack);
+    wireSyncCard();
     document.getElementById("export").addEventListener("click", function () {
       var btn = this; btn.disabled = true;
       exportBook().then(function (data) {
@@ -1075,6 +1080,7 @@ button { cursor: pointer; }
       var f = this.files && this.files[0]; this.value = "";
       if (!f) return;
       f.text().then(function (t) { return importBook(JSON.parse(t)); }).then(function (r) {
+        syncSoon();
         toast(r.songs || r.lists ? "Added " + r.songs + (r.songs === 1 ? " song" : " songs") + (r.lists ? " and " + r.lists + (r.lists === 1 ? " playlist" : " playlists") : "") : "Everything in that file is already here");
       }).catch(function () { toast("That file isn\u2019t a Dave\u2019s Tunes songbook"); });
     });
@@ -1124,7 +1130,7 @@ button { cursor: pointer; }
       '<button class="btn ghost icon" id="book-btn" type="button" aria-label="Share the songbook with another phone" title="Share songbook">' + ICON.cloud + "</button>" +
       '<button class="btn ghost icon" id="chord-book" type="button" aria-label="All chord charts" title="All chord charts">' + ICON.grid + "</button>" +
       '<button class="btn ghost" id="theme" type="button" aria-label="Change light or dark look"></button></header>' +
-      installBanner() +
+      installBanner() + syncBanner() +
       '<div class="tabs" role="tablist">' +
         '<button class="tab' + (listTab === "songs" ? " on" : "") + '" id="tab-songs" type="button" role="tab" aria-selected="' + (listTab === "songs") + '">Songs</button>' +
         '<button class="tab' + (listTab === "lists" ? " on" : "") + '" id="tab-lists" type="button" role="tab" aria-selected="' + (listTab === "lists") + '">Playlists</button></div>' +
@@ -1141,6 +1147,8 @@ button { cursor: pointer; }
     document.getElementById("chord-book").addEventListener("click", openChordBook);
     document.getElementById("book-btn").addEventListener("click", function () { go({ name: "book" }); });
     wireInstall();
+    var st = document.getElementById("sync-tap");
+    if (st) st.addEventListener("click", function () { syncNow(true); });
     var tb = document.getElementById("theme");
     function showTheme() { tb.innerHTML = THEME_LABEL[prefs.theme || "auto"]; }
     tb.addEventListener("click", function () {
@@ -2269,9 +2277,229 @@ button { cursor: pointer; }
     }
   }
 
+  // ---------- Google Drive sync ----------
+  // Every device signed in to the same Google account shares one songbook, kept in the app's own
+  // hidden folder in that person's Drive (the app can't see anything else there). Sign-in is a plain
+  // redirect to Google and back, which works inside an installed app where pop-ups don't.
+  var GOOGLE_CLIENT_ID = "";
+  var SYNC = "davesTunes.sync.v1", GTOKEN = "davesTunes.gtoken.v1";
+  var DRIVE = "https://www.googleapis.com/drive/v3", UPLOAD = "https://www.googleapis.com/upload/drive/v3";
+  var syncState = load(SYNC, {}), syncing = false, syncTimer = null, syncMsg = "";
+  function saveSync() { save(SYNC, syncState); }
+  function driveReady() { return !!(GOOGLE_CLIENT_ID && syncState.on); }
+  function token() {
+    var t = load(GTOKEN, null);
+    return t && t.exp > Date.now() + 60000 ? t.t : null;
+  }
+  function redirectUri() { return location.origin + location.pathname.replace(/index\.html$/, ""); }
+  function signIn() {
+    var st = newId("st-");
+    syncState.pending = { state: st, view: view }; saveSync();
+    var q = {
+      client_id: GOOGLE_CLIENT_ID, redirect_uri: redirectUri(), response_type: "token",
+      scope: "https://www.googleapis.com/auth/drive.appdata", include_granted_scopes: "true", state: st
+    };
+    if (syncState.email) q.login_hint = syncState.email;
+    location.href = "https://accounts.google.com/o/oauth2/v2/auth?" + Object.keys(q).map(function (k) { return k + "=" + encodeURIComponent(q[k]); }).join("&");
+  }
+  // Coming back from Google: the token is in the address after "#".
+  function readSignInReturn() {
+    var h = location.hash;
+    if (!/[#&](access_token|error)=/.test(h)) return;
+    var q = {};
+    h.slice(1).split("&").forEach(function (kv) { var i = kv.indexOf("="); q[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1)); });
+    var p = syncState.pending; delete syncState.pending;
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+    if (p && p.view) view = p.view;
+    if (!p || q.state !== p.state) { saveSync(); return; }
+    if (q.access_token) {
+      save(GTOKEN, { t: q.access_token, exp: Date.now() + (Number(q.expires_in) || 3600) * 1000 });
+      syncState.on = true; syncMsg = ""; saveSync();
+      setTimeout(function () { syncNow(true); }, 50);
+    } else { syncMsg = "Google sign-in didn’t finish. Try again."; saveSync(); }
+  }
+  function gfetch(url, opts) {
+    var t = token();
+    if (!t) return Promise.reject({ auth: true });
+    opts = opts || {}; opts.headers = opts.headers || {};
+    opts.headers.Authorization = "Bearer " + t;
+    return fetch(url, opts).then(function (r) {
+      if (r.status === 401 || r.status === 403) { save(GTOKEN, null); throw { auth: true }; }
+      if (!r.ok) throw new Error("Drive " + r.status);
+      return r;
+    });
+  }
+  function driveList() {
+    return gfetch(DRIVE + "/files?spaces=appDataFolder&pageSize=1000&fields=files(id,name)").then(function (r) { return r.json(); })
+      .then(function (j) { var m = {}; (j.files || []).forEach(function (f) { m[f.name] = f.id; }); return m; });
+  }
+  function driveRead(id) { return gfetch(DRIVE + "/files/" + id + "?alt=media").then(function (r) { return r.json(); }); }
+  function driveWrite(files, name, data) {
+    var body = JSON.stringify(data);
+    if (files[name]) return gfetch(UPLOAD + "/files/" + files[name] + "?uploadType=media", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: body });
+    var b = "dt" + Date.now();
+    var multi = "--" + b + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + JSON.stringify({ name: name, parents: ["appDataFolder"] }) +
+      "\r\n--" + b + "\r\nContent-Type: application/json\r\n\r\n" + body + "\r\n--" + b + "--";
+    return gfetch(UPLOAD + "/files?uploadType=multipart&fields=id", { method: "POST", headers: { "Content-Type": "multipart/related; boundary=" + b }, body: multi })
+      .then(function (r) { return r.json(); }).then(function (j) { files[name] = j.id; });
+  }
+  function driveUser() {
+    return gfetch(DRIVE + "/about?fields=user(emailAddress,displayName)").then(function (r) { return r.json(); }).then(function (j) { return j.user || {}; });
+  }
+  // A fingerprint of a song or playlist, the same on every device whatever order its fields are in.
+  function canon(v) {
+    if (Array.isArray(v)) return "[" + v.map(canon).join(",") + "]";
+    if (v && typeof v === "object") return "{" + Object.keys(v).sort().filter(function (k) { return v[k] !== undefined; }).map(function (k) { return JSON.stringify(k) + ":" + canon(v[k]); }).join(",") + "}";
+    return JSON.stringify(v);
+  }
+  // Three-way merge against what both sides looked like at the last sync. Whoever changed something
+  // wins; if both changed the same song, both versions are kept. Nothing is lost.
+  function mergeItems(local, remote, gone, last, kind) {
+    var L = {}, R = {}, out = [], seen = {}, copies = [];
+    local.forEach(function (x) { L[x.id] = x; });
+    remote.forEach(function (x) { R[x.id] = x; });
+    var ids = remote.map(function (x) { return x.id; }).concat(local.map(function (x) { return x.id; }));
+    ids.forEach(function (id) {
+      if (seen[id]) return; seen[id] = 1;
+      var l = L[id], r = R[id], h = last[kind + id], hl = l ? canon(l) : null, hr = r ? canon(r) : null, res;
+      if (hl === hr) res = l;
+      else if (h === undefined) {
+        if (l && l.sample) res = r || (gone[id] ? null : l);       // an untouched example gives way
+        else if (l && r) { res = r; copies.push(l); }
+        else res = l || r;
+      } else if (hl === h) res = r;
+      else if (hr === h) res = l;
+      else if (l && r) { res = r; copies.push(l); }
+      else res = l || r;                                         // an edit beats a delete
+      if (res) out.push(res);
+    });
+    copies.forEach(function (c) {
+      var d = JSON.parse(JSON.stringify(c));
+      d.id = newId(kind === "s:" ? "u-" : "p-");
+      if (kind === "s:") d.title = c.title + " (this phone)"; else d.name = c.name + " (this phone)";
+      out.push(d);
+    });
+    return out;
+  }
+  function syncSoon() {
+    if (!driveReady()) return;
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(function () { syncNow(false); }, 2500);
+  }
+  function onDataSaved() { if (!syncing) syncSoon(); }
+  function syncNow(fromTap) {
+    if (!driveReady() || syncing) return Promise.resolve();
+    if (!token()) { if (fromTap) signIn(); else showSyncState(); return Promise.resolve(); }
+    syncing = true; syncMsg = "Syncing…"; showSyncState();
+    var files, remote, last = syncState.hash || {};
+    return driveList().then(function (f) {
+      files = f;
+      return files["songbook.json"] ? driveRead(files["songbook.json"]) : null;
+    }).then(function (rb) {
+      remote = rb && rb.app === "daves-tunes" ? rb : { app: "daves-tunes", version: 2, songs: [], playlists: [], gone: {}, photos: {} };
+      remote.gone = remote.gone || {}; remote.photos = remote.photos || {};
+      var before = canon([songs, playlists]);
+      var ms = mergeItems(songs, remote.songs || [], remote.gone, last, "s:");
+      var mp = mergeItems(playlists, remote.playlists || [], remote.gone, last, "p:");
+      var keepIds = {}; ms.forEach(function (s) { keepIds[s.id] = 1; });
+      // Remember deletions so other devices drop the same song instead of bringing it back.
+      Object.keys(last).forEach(function (k) {
+        var id = k.slice(2);
+        if (k.indexOf("s:") === 0 && !keepIds[id]) remote.gone[id] = Date.now();
+        if (k.indexOf("p:") === 0 && !mp.some(function (p) { return p.id === id; })) remote.gone[id] = Date.now();
+      });
+      Object.keys(remote.gone).forEach(function (id) { if (keepIds[id] || mp.some(function (p) { return p.id === id; })) delete remote.gone[id]; });
+      songs.filter(function (s) { return !keepIds[s.id]; }).forEach(function (s) { photosDel(s.id); });
+      songs = ms; playlists = mp;
+      mp.forEach(function (pl) { pl.items = pl.items.filter(function (id) { return keepIds[id]; }); });
+      save(KEY, songs); savePlaylists();
+      var changedHere = canon([songs, playlists]) !== before;
+      // Photos: send ones Drive doesn't have yet, fetch ones this phone is missing.
+      var jobs = songs.map(function (s) {
+        return photosGet(s.id).then(function (have) {
+          var name = "photo-" + s.id + ".json";
+          if (have && have.length && !remote.photos[s.id]) {
+            return Promise.all(have.map(blobToDataUrl)).then(function (urls) {
+              return driveWrite(files, name, urls).then(function () { remote.photos[s.id] = urls.length; });
+            });
+          }
+          if ((!have || !have.length) && remote.photos[s.id] && files[name]) {
+            return driveRead(files[name]).then(function (urls) {
+              return Promise.all(urls.map(dataUrlToBlob)).then(function (blobs) { return photosPut(s.id, blobs); });
+            });
+          }
+        });
+      });
+      return Promise.all(jobs).then(function () {
+        var next = { app: "daves-tunes", version: 2, saved: new Date().toISOString(), songs: songs, playlists: playlists, gone: remote.gone, photos: remote.photos };
+        var same = rb && canon([rb.songs, rb.playlists, rb.gone, rb.photos]) === canon([next.songs, next.playlists, next.gone, next.photos]);
+        return same ? null : driveWrite(files, "songbook.json", next);
+      }).then(function () {
+        var h = {};
+        songs.forEach(function (s) { h["s:" + s.id] = canon(s); });
+        playlists.forEach(function (p) { h["p:" + p.id] = canon(p); });
+        syncState.hash = h; syncState.last = Date.now();
+        return syncState.email ? null : driveUser().then(function (u) { syncState.email = u.emailAddress || ""; }, function () {});
+      }).then(function () {
+        syncMsg = ""; saveSync();
+        if (changedHere && view.name !== "edit") render();
+      });
+    }).catch(function (e) {
+      syncMsg = e && e.auth ? "" : "Couldn’t reach Google Drive. It will try again later.";
+    }).then(function () { syncing = false; showSyncState(); });
+  }
+  function agoText(t) {
+    if (!t) return "not yet";
+    var m = Math.round((Date.now() - t) / 60000);
+    return m < 1 ? "just now" : m < 60 ? m + (m === 1 ? " minute" : " minutes") + " ago" : new Date(t).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
+  }
+  function syncCardHtml() {
+    if (!GOOGLE_CLIENT_ID) return "";
+    if (!syncState.on) return '<section class="book-card"><h3 class="sub">Keep songs in step with Google Drive</h3>' +
+      "<p>Sign in with the same Google account on each phone and tablet, and they will all share one songbook. Songs, playlists and sheet photos are kept in a private app folder in that Google Drive.</p>" +
+      '<button class="btn primary big" id="drive-on" type="button">' + ICON.cloud + "Connect Google Drive</button>" +
+      (syncMsg ? '<p class="error">' + esc(syncMsg) + "</p>" : "") + "</section>";
+    return '<section class="book-card"><h3 class="sub">Google Drive sync is on</h3>' +
+      "<p>" + (syncState.email ? "Account: <b>" + esc(syncState.email) + "</b><br>" : "") +
+      'Last synced: <span id="sync-when">' + (syncing ? "syncing now…" : agoText(syncState.last)) + "</span></p>" +
+      (syncMsg && !syncing ? '<p class="error">' + esc(syncMsg) + "</p>" : "") +
+      '<div class="form-actions"><button class="btn primary" id="drive-sync" type="button">Sync now</button>' +
+      '<button class="btn" id="drive-off" type="button">Turn off</button></div>' +
+      '<p class="hint">Turning it off keeps every song on this phone.</p></section>';
+  }
+  function wireSyncCard() {
+    var on = document.getElementById("drive-on"), now = document.getElementById("drive-sync"), off = document.getElementById("drive-off");
+    if (on) on.addEventListener("click", signIn);
+    if (now) now.addEventListener("click", function () { syncNow(true); });
+    if (off) off.addEventListener("click", function () {
+      syncState = {}; saveSync(); save(GTOKEN, null); toast("Google Drive sync is off"); renderBook();
+    });
+  }
+  // The list page shows a one-tap "Sync now" when the Google sign-in has run out.
+  function syncBanner() {
+    if (!driveReady() || token()) return "";
+    return '<div class="banner install"><p><b>Tap to sync with Google Drive.</b> It signs you back in with Google for a moment.</p>' +
+      '<div class="form-actions"><button class="btn primary" id="sync-tap" type="button">Sync now</button></div></div>';
+  }
+  function showSyncState() {
+    if (view.name === "book") {
+      var box = document.getElementById("sync-box");
+      if (box) { box.innerHTML = syncCardHtml(); wireSyncCard(); }
+    } else if (view.name === "list" && !syncing) {
+      var has = !!document.getElementById("sync-tap"), want = driveReady() && !token();
+      if (has !== want) renderList();
+    }
+  }
+  if (GOOGLE_CLIENT_ID) {
+    document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") syncSoon(); });
+    window.addEventListener("online", syncSoon);
+  }
+
   // ---------- Start ----------
+  readSignInReturn();
   try { history.replaceState(view, ""); } catch (e) {}
   render();
+  if (driveReady()) syncNow(false);
 
   // Offline support when hosted as an installed app (not available inside every viewer, so failures are ignored)
   // When a newer version has downloaded, a banner offers to switch to it. Songs, playlists and photos

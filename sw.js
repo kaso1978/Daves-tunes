@@ -1,5 +1,5 @@
 // Keeps Dave's Tunes working with no signal: the app files are cached on first visit.
-const CACHE = "daves-tunes-v20";
+const CACHE = "daves-tunes-v21";
 const SHELL = ["./", "index.html", "manifest.json", "icon.svg", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"];
 // A new version waits until Dave taps "Update" in the app, so nothing changes under him mid-song.
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); });
