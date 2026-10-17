@@ -1054,28 +1054,41 @@ button { cursor: pointer; }
         '<div id="sync-box">' + syncCardHtml() + "</div>" +
         '<section class="book-card"><h3 class="sub">Send the songbook to another phone</h3>' +
           "<p>Makes one file with every song, playlist and sheet photo. Send it by message or email, then open Dave\u2019s Tunes on the other phone and load it there.</p>" +
-          '<button class="btn primary big" id="export" type="button">' + ICON.share + "Send songbook</button></section>" +
+          '<button class="btn primary big" id="export" type="button">' + ICON.share + "Send songbook</button>" +
+          '<button class="btn" id="save-file" type="button">Save the file to this phone instead</button></section>' +
         '<section class="book-card"><h3 class="sub">Load songs from a songbook file</h3>' +
           "<p>Adds the songs and playlists from the file. Nothing already on this phone is changed or removed.</p>" +
           '<label class="btn big" for="import-file">' + ICON.plus + "Choose songbook file</label>" +
-          '<input class="vh" id="import-file" type="file" accept=".json,application/json"></section>' +
+          '<input class="vh" id="import-file" type="file" accept=".txt,.json,text/plain,application/json"></section>' +
       "</div>";
     document.getElementById("back").addEventListener("click", goBack);
     wireSyncCard();
-    document.getElementById("export").addEventListener("click", function () {
-      var btn = this; btn.disabled = true;
-      exportBook().then(function (data) {
-        var name = "daves-tunes-songbook-" + new Date().toISOString().slice(0, 10) + ".json";
-        var file = new File([JSON.stringify(data)], name, { type: "application/json" });
-        var done = function () { btn.disabled = false; };
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          return navigator.share({ files: [file], title: "Dave\u2019s Tunes songbook" }).then(done, done);
-        }
-        var a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = name;
-        document.body.appendChild(a); a.click(); a.remove(); done();
-        toast("Songbook saved to Downloads");
-      }).catch(function () { btn.disabled = false; toast("Couldn\u2019t make the songbook file"); });
+    // Build the file as soon as the page opens. Phones only allow the share sheet straight after a
+    // tap, so the file has to be ready the moment the button is pressed.
+    var exBtn = document.getElementById("export"), exFile = null;
+    exBtn.disabled = true; exBtn.innerHTML = ICON.share + "Getting it ready\u2026";
+    exportBook().then(function (data) {
+      var name = "daves-tunes-songbook-" + new Date().toISOString().slice(0, 10) + ".txt";
+      // Saved as .txt: Android won't put .json files in the share sheet.
+      exFile = new File([JSON.stringify(data)], name, { type: "text/plain" });
+      exBtn.disabled = false; exBtn.innerHTML = ICON.share + "Send songbook";
+    }).catch(function () { exBtn.innerHTML = "Couldn\u2019t make the songbook file"; });
+    function downloadFile(f) {
+      var a = document.createElement("a"); a.href = URL.createObjectURL(f); a.download = f.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 60000);
+      toast("Saved \u201c" + f.name + "\u201d to Downloads");
+    }
+    exBtn.addEventListener("click", function () {
+      if (!exFile) return;
+      var shareable = false;
+      try { shareable = !!(navigator.share && navigator.canShare && navigator.canShare({ files: [exFile] })); } catch (e) {}
+      if (!shareable) return downloadFile(exFile);
+      navigator.share({ files: [exFile], title: "Dave\u2019s Tunes songbook" }).catch(function (err) {
+        if (!err || err.name !== "AbortError") downloadFile(exFile);  // sharing refused: save it instead
+      });
     });
+    document.getElementById("save-file").addEventListener("click", function () { if (exFile) downloadFile(exFile); });
     document.getElementById("import-file").addEventListener("change", function () {
       var f = this.files && this.files[0]; this.value = "";
       if (!f) return;
