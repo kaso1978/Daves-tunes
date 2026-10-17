@@ -275,6 +275,21 @@ button { cursor: pointer; }
 .spinner { width: 48px; height: 48px; border-radius: 50%; border: 5px solid var(--accent-soft); border-top-color: var(--accent); animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+.tag.check { color: #8a4b00; border-color: #e0a54a; background: #fff3dd; }
+:root[data-theme="dark"] .tag.check { color: #ffcf8a; border-color: #8a5a1a; background: #2c2010; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tag.check { color: #ffcf8a; border-color: #8a5a1a; background: #2c2010; } }
+.banner.warn { display: grid; background: var(--surface); border: 2px solid #e0a54a; }
+.banner.warn .btn { white-space: nowrap; padding: 0 14px; }
+.count-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 12px 0 8px; }
+.count-row .count { margin: 0 4px; }
+.btn.filter { min-height: 48px; padding: 0 14px; font-size: 17px; }
+.btn.filter.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.check-row { display: flex; align-items: center; gap: 14px; font-size: 19px; font-weight: 700; background: var(--surface); border: 2px solid var(--edge); border-radius: 14px; padding: 14px 16px; cursor: pointer; }
+.check-row input { width: 30px; height: 30px; accent-color: var(--accent); flex: none; }
+.sheet-photos { display: grid; gap: 10px; }
+.lyrics .sheet-img { display: block; width: 100%; border-radius: 12px; margin-bottom: 12px; background: #fff; }
+.photo-list { display: grid; gap: 10px; }
+.photo-list img { width: 100%; border-radius: 12px; border: 2px solid var(--edge); }
 .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 14px; background: var(--surface); border: 2px solid var(--edge); border-radius: 16px; padding: 4px; }
 .tab { min-height: 52px; border: 0; border-radius: 12px; background: transparent; font-weight: 700; font-size: 19px; }
 .tab.on { background: var(--accent); color: var(--accent-ink); }
@@ -495,6 +510,49 @@ button { cursor: pointer; }
 
   var songs = load(KEY, null);
   if (!Array.isArray(songs)) { songs = SAMPLES.slice(); save(KEY, songs); }
+  // Sheet photos are kept with scanned songs (in IndexedDB, which has room for them) so the words can
+  // be checked against the paper later. Any failure just means no photo is kept.
+  var photoDb = null;
+  function openPhotoDb() {
+    if (!photoDb) photoDb = new Promise(function (resolve, reject) {
+      try {
+        var r = indexedDB.open("davesTunes", 1);
+        r.onupgradeneeded = function () { r.result.createObjectStore("photos"); };
+        r.onsuccess = function () { resolve(r.result); };
+        r.onerror = function () { reject(r.error); };
+      } catch (e) { reject(e); }
+    });
+    return photoDb;
+  }
+  function photoTx(mode, fn) {
+    return openPhotoDb().then(function (d) {
+      return new Promise(function (resolve, reject) {
+        var t = d.transaction("photos", mode), req = fn(t.objectStore("photos"));
+        t.oncomplete = function () { resolve(req && req.result); };
+        t.onerror = function () { reject(t.error); };
+      });
+    });
+  }
+  function photosPut(id, blobs) { return photoTx("readwrite", function (st) { return st.put(blobs, id); }).catch(function () {}); }
+  function photosGet(id) { return photoTx("readonly", function (st) { return st.get(id); }).catch(function () { return null; }); }
+  function photosDel(id) { return photoTx("readwrite", function (st) { return st.delete(id); }).catch(function () {}); }
+  // Keep a smaller copy for checking against later.
+  function shrinkPhoto(blob) {
+    return new Promise(function (resolve) {
+      var src = URL.createObjectURL(blob), img = new Image();
+      img.onload = function () {
+        URL.revokeObjectURL(src);
+        var sc = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+        var cv = document.createElement("canvas");
+        cv.width = Math.round(img.naturalWidth * sc); cv.height = Math.round(img.naturalHeight * sc);
+        cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+        cv.toBlob(function (b) { resolve(b || blob); }, "image/jpeg", 0.8);
+      };
+      img.onerror = function () { URL.revokeObjectURL(src); resolve(blob); };
+      img.src = src;
+    });
+  }
+
   var PLAYLISTS = "davesTunes.playlists.v1";
   var playlists = load(PLAYLISTS, []);
   if (!Array.isArray(playlists)) playlists = [];
@@ -727,7 +785,8 @@ button { cursor: pointer; }
       (listTab === "songs"
         ? '<label class="search" for="q">' + ICON.search +
           '<input id="q" type="search" placeholder="Find a song" autocomplete="off" value="' + esc(query) + '"></label>' +
-          '<p class="count" id="count"></p><ul class="songs" id="list"></ul>' +
+          '<div class="count-row"><p class="count" id="count"></p><button class="btn filter" id="only-check" type="button" hidden></button></div>' +
+          '<ul class="songs" id="list"></ul>' +
           '<button class="btn primary fab" id="add" type="button">' + ICON.plus + 'Add song</button>'
         : '<p class="count" id="count"></p><ul class="songs" id="plists"></ul>' +
           '<button class="btn primary fab" id="new-pl" type="button">' + ICON.plus + 'New playlist</button>');
@@ -749,14 +808,23 @@ button { cursor: pointer; }
   }
   var listTab = prefs.tab === "lists" ? "lists" : "songs";
   function setTab(t) { listTab = t; prefs.tab = t; save(PREFS, prefs); renderList(); }
+  var onlyCheck = false;
   function fillList() {
     var q = query.trim().toLowerCase();
+    var toCheck = songs.filter(function (s) { return s.unverified; }).length;
+    if (!toCheck) onlyCheck = false;
+    var oc = document.getElementById("only-check");
+    oc.hidden = !toCheck;
+    oc.className = "btn filter" + (onlyCheck ? " on" : "");
+    oc.textContent = onlyCheck ? "Show all songs" : "Needs checking (" + toCheck + ")";
+    oc.onclick = function () { onlyCheck = !onlyCheck; fillList(); };
     var shown = songs.slice().sort(byTitle).filter(function (s) {
+      if (onlyCheck && !s.unverified) return false;
       if (!q) return true;
       return (s.title + " " + (s.artist || "") + " " + (s.lyrics || "")).toLowerCase().indexOf(q) !== -1;
     });
     var list = document.getElementById("list");
-    document.getElementById("count").textContent = q
+    document.getElementById("count").textContent = q || onlyCheck
       ? shown.length + " of " + songs.length + " songs"
       : songs.length + (songs.length === 1 ? " song" : " songs");
     if (!shown.length) {
@@ -767,7 +835,8 @@ button { cursor: pointer; }
     }
     list.innerHTML = shown.map(function (s) {
       return '<li><button class="song-row" type="button" data-id="' + esc(s.id) + '">' +
-        '<span class="info"><span class="t">' + esc(s.title) + (s.sample ? '<span class="tag">Example</span>' : "") + "</span>" +
+        '<span class="info"><span class="t">' + esc(s.title) + (s.sample ? '<span class="tag">Example</span>' : "") +
+        (s.unverified ? '<span class="tag check">Needs checking</span>' : "") + "</span>" +
         (s.artist ? '<span class="a">' + esc(s.artist) + "</span>" : "") + "</span>" +
         '<span class="capo-chip" aria-label="' + esc(capoWords(s)) + '">' + esc(capoLabel(s)) + "</span></button></li>";
     }).join("");
@@ -809,6 +878,9 @@ button { cursor: pointer; }
       (s.artist ? '<div class="artist">' + esc(s.artist) + "</div>" : "") +
       (plCtx ? '<div class="pl-ctx">Song ' + (plCtx.idx + 1) + " of " + plCtx.ids.length + " in \u201c" + esc(plCtx.pl.name) + "\u201d</div>" : "") + "</div>" +
       '<div class="plate"><div class="big">' + esc(capoLabel(s)) + '</div><div class="small">' + esc(capoWords(s)) + "</div></div></section>" +
+      (s.unverified ? '<div class="banner warn"><p><b>This song came from a photo and hasn\u2019t been checked yet.</b></p>' +
+        '<div class="form-actions"><button class="btn" id="check-now" type="button">' + ICON.edit + "Check it now</button>" +
+        (String(s.lyrics || "").trim() ? '<button class="btn" id="mark-checked" type="button">' + ICON.check + "It\u2019s correct</button>" : "") + "</div></div>" : "") +
       partsBar(s) +
       '<div class="song-actions"><button class="btn" id="arrange" type="button">' + ICON.list + "Arrange</button>" +
       '<button class="btn" id="to-pl" type="button">' + ICON.plus + "Add to playlist</button></div>" +
@@ -834,6 +906,23 @@ button { cursor: pointer; }
     document.getElementById("back").addEventListener("click", goBack);
     document.getElementById("edit").addEventListener("click", function () { go({ name: "edit", id: s.id }); });
     document.getElementById("arrange").addEventListener("click", function () { go({ name: "arrange", id: s.id }); });
+    // A song kept as a photo only (no words typed yet) shows the sheet itself, so it can still be played.
+    if (!String(s.lyrics || "").trim()) {
+      photosGet(s.id).then(function (blobs) {
+        var lyr = document.getElementById("lyrics");
+        if (!blobs || !blobs.length || !lyr || cur !== s) return;
+        lyr.innerHTML = blobs.map(function (b, i) { return '<img class="sheet-img" alt="Sheet page ' + (i + 1) + '" src="' + URL.createObjectURL(b) + '">'; }).join("");
+      });
+    }
+    var cn = document.getElementById("check-now");
+    if (cn) {
+      cn.addEventListener("click", function () { go({ name: "edit", id: s.id }); });
+      var mc = document.getElementById("mark-checked");
+      if (mc) mc.addEventListener("click", function () {
+        delete s.unverified; save(KEY, songs); toast("Marked as checked");
+        var y = window.scrollY; renderSong(s); window.scrollTo(0, y);
+      });
+    }
     document.getElementById("to-pl").addEventListener("click", function () { openAddToPlaylist(s); });
     var nx = document.getElementById("next");
     if (nx) nx.addEventListener("click", function () {
@@ -1253,10 +1342,11 @@ button { cursor: pointer; }
       "<span><b>Type it in</b><span>Fill in the title, capo, chord and words yourself.</span></span></button></div>";
     document.getElementById("back").addEventListener("click", goBack);
     var gs = document.getElementById("go-scan");
-    if (gs) gs.addEventListener("click", function () { photos = []; go({ name: "scan" }); });
+    if (gs) gs.addEventListener("click", function () { photos = []; lastSaved = ""; go({ name: "scan" }); });
     document.getElementById("go-type").addEventListener("click", function () { go({ name: "edit" }, true); });
   }
 
+  var lastSaved = "";
   function renderScan() {
     if (scanState === "off") return renderAdd();
     document.title = "Scan a sheet · Dave's Tunes";
@@ -1274,14 +1364,17 @@ button { cursor: pointer; }
         (photos.length
           ? '<p class="lead">' + (photos.length === 1 ? "Got it." : "Got " + photos.length + " pages.") +
             " Make sure the words are the right way up (tap ↻ to turn the photo). If the song runs onto another page, add that too.</p><div class=\"thumbs\">" + thumbs + "</div>"
-          : '<p class="lead">Lay the sheet flat in good light and take a photo from straight above, so all the words are in the picture.</p>') +
+          : (lastSaved ? '<div class="banner">' + ICON.check + "<p><b>Saved \u201c" + esc(lastSaved) + "\u201d to check later.</b> Take a photo of the next sheet, or tap Back when you\u2019re done.</p></div>" : "") +
+            '<p class="lead">Lay the sheet flat in good light and take a photo from straight above, so all the words are in the picture.</p>') +
         // Real <label>s over the file inputs: some phones ignore a script "click" on a hidden input
         '<input class="vh" id="photo" type="file" accept="image/*" capture="environment" tabindex="-1">' +
         '<input class="vh" id="photo-lib" type="file" accept="image/*" tabindex="-1">' +
         '<div class="scan-actions">' +
           (canAdd ? '<label class="btn ' + (photos.length ? "" : "primary ") + 'big" for="photo" tabindex="0" role="button">' + ICON.camera +
             (photos.length ? "Add another page" : "Take a photo") + "</label>" : "") +
-          (photos.length ? '<button class="btn primary big" id="read" type="button">' + ICON.check + "Read the sheet</button>" : "") +
+          (photos.length ? '<button class="btn primary big" id="read" type="button">' + ICON.check + "Read the sheet</button>" +
+            '<button class="btn big" id="photo-only" type="button">' + ICON.camera + "Keep the photo, type the words later</button>" +
+            '<p class="hint">Handwritten sheet? Keeping the photo is quicker. It shows on the song page until the words are typed in.</p>' : "") +
           (canAdd && !photos.length ? '<label class="btn ghost" for="photo-lib" tabindex="0" role="button">Choose a photo already taken</label>' : "") +
         "</div>" +
         '<div class="reading" id="reading" hidden><div class="spinner" aria-hidden="true"></div>' +
@@ -1322,6 +1415,16 @@ button { cursor: pointer; }
       });
     });
     var rd = document.getElementById("read"); if (rd) rd.addEventListener("click", readSheet);
+    var po = document.getElementById("photo-only");
+    if (po) po.addEventListener("click", function () {
+      var title = "Scanned song " + new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + (songs.filter(function (x) { return x.unverified; }).length + 1);
+      var song = { id: newId("u-"), title: title, artist: "", capo: 0, chord: "", lyrics: "", unverified: true };
+      var blobs = photos.map(function (p) { return p.blob || p.file; });
+      songs.push(song); save(KEY, songs);
+      Promise.all(blobs.map(shrinkPhoto)).then(function (small) { photosPut(song.id, small); });
+      photos.forEach(function (p) { URL.revokeObjectURL(p.url); }); photos = [];
+      lastSaved = title; renderScan(); window.scrollTo(0, 0);
+    });
     document.getElementById("stop").addEventListener("click", function () { if (scanCtl) scanCtl.abort(); });
   }
 
@@ -1508,7 +1611,7 @@ button { cursor: pointer; }
         draft = {
           title: String(r.title || "").trim(), artist: String(r.artist || "").trim(),
           capo: capo, chord: String(r.chord || "").trim(), lyrics: String(r.lyrics || "").replace(/\s+$/, ""),
-          scanned: true, ocr: !!r.ocr
+          scanned: true, ocr: !!r.ocr, photos: photos.map(function (p) { return p.blob || p.file; })
         };
         photos.forEach(function (p) { URL.revokeObjectURL(p.url); }); photos = [];
         go({ name: "edit", draft: true }, true);
@@ -1533,6 +1636,7 @@ button { cursor: pointer; }
     s = s || fromDraft || { title: "", artist: "", capo: 0, chord: "", lyrics: "" };
     document.title = (isNew ? "Add song" : "Edit song") + " · Dave's Tunes";
     var start = JSON.stringify([s.title, s.artist, Number(s.capo) || 0, s.chord, s.lyrics]);
+    var needsCheck = !!((fromDraft && fromDraft.scanned) || s.unverified);
     var chips = COMMON_CHORDS.map(function (c) {
       return '<button class="chip" type="button" data-chord="' + c + '">' + c + "</button>";
     }).join("");
@@ -1544,9 +1648,11 @@ button { cursor: pointer; }
         '<button class="btn primary" id="leave-no" type="button">Keep editing</button></div></div>' +
       '<form class="form" id="form" novalidate>' +
         (fromDraft && fromDraft.scanned
-          ? '<div class="banner">' + ICON.check + "<p><b>Here’s what was read from the sheet.</b> Check the words and chords against the paper, fix anything that’s wrong, then tap Save song." +
-            (fromDraft.ocr ? " Handwriting and chords often come out wrong, so look closely." : "") + "</p></div>"
+          ? '<div class="banner">' + ICON.check + "<p><b>Here’s what was read from the sheet.</b> Check it against the paper now, or just tap <b>Save, check later</b> and move on to the next sheet." +
+            (fromDraft.ocr ? " Handwriting and chords often come out wrong, so look closely when you check." : "") + "</p></div>"
           : "") +
+        (needsCheck ? '<div class="sheet-photos"><button class="btn" id="show-photos" type="button" hidden>' + ICON.camera + "Show the sheet photo</button>" +
+          '<div class="photo-list" id="photo-list" hidden></div></div>' : "") +
         '<div class="field"><label for="f-title">Song title</label><input id="f-title" required autocapitalize="words" value="' + esc(s.title) + '"></div>' +
         '<div class="field"><label for="f-artist">Who sings it <span class="hint">(optional)</span></label><input id="f-artist" autocapitalize="words" value="' + esc(s.artist) + '"></div>' +
         '<div class="field"><span class="label" id="capo-lbl">Capo fret</span>' +
@@ -1570,11 +1676,32 @@ button { cursor: pointer; }
           '<div class="confirm" id="confirm" hidden><p>Delete “' + esc(s.title) + '” for good?</p>' +
           '<div class="form-actions"><button class="btn danger" id="del-yes" type="button">Yes, delete it</button>' +
           '<button class="btn" id="del-no" type="button">Keep it</button></div></div></div>') +
-        '<div class="savebar"><button class="btn primary big" type="submit">' + ICON.check + "Save song</button></div>" +
+        (needsCheck ? '<label class="check-row" for="f-checked"><input type="checkbox" id="f-checked"><span>I\u2019ve checked the words against the paper</span></label>' : "") +
+        '<div class="savebar"><button class="btn primary big" id="save-btn" type="submit">' + ICON.check + "Save song</button></div>" +
       "</form>";
 
     var capoVal = Number(s.capo) || 0;
     var capoOut = document.getElementById("f-capo"), chord = document.getElementById("f-chord");
+    var checkedBox = document.getElementById("f-checked"), saveBtn = document.getElementById("save-btn");
+    function saveLabel() {
+      saveBtn.innerHTML = ICON.check + (checkedBox && !checkedBox.checked ? "Save, check later" : "Save song");
+    }
+    if (checkedBox) checkedBox.addEventListener("change", saveLabel);
+    saveLabel();
+    // Show the photo(s) the song was scanned from, to check the words against.
+    if (needsCheck) {
+      var got = fromDraft && fromDraft.photos ? Promise.resolve(fromDraft.photos) : photosGet(s.id);
+      got.then(function (blobs) {
+        if (!blobs || !blobs.length || !document.getElementById("show-photos")) return;
+        var btn = document.getElementById("show-photos"), list = document.getElementById("photo-list");
+        btn.hidden = false;
+        list.innerHTML = blobs.map(function (b, i) { return '<img alt="Sheet page ' + (i + 1) + '" src="' + URL.createObjectURL(b) + '">'; }).join("");
+        btn.addEventListener("click", function () {
+          list.hidden = !list.hidden;
+          btn.innerHTML = ICON.camera + (list.hidden ? "Show the sheet photo" : "Hide the sheet photo");
+        });
+      });
+    }
     function current() {
       return [document.getElementById("f-title").value.trim(), document.getElementById("f-artist").value.trim(),
         capoVal, chord.value.trim(), document.getElementById("f-lyrics").value.replace(/\s+$/, "")];
@@ -1630,11 +1757,15 @@ button { cursor: pointer; }
     document.getElementById("form").addEventListener("submit", function (e) {
       e.preventDefault();
       var v = current(), err = document.getElementById("f-error");
+      if (!v[0] && checkedBox && !checkedBox.checked) {
+        v[0] = "Scanned song " + new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + (songs.filter(function (x) { return x.unverified; }).length + 1);
+      }
       if (!v[0]) {
         err.textContent = "Give the song a title so you can find it later."; err.hidden = false;
         document.getElementById("f-title").focus(); return;
       }
       var data = { title: v[0], artist: v[1], capo: v[2], chord: v[3], lyrics: v[4] };
+      var later = !!(checkedBox && !checkedBox.checked);
       var id;
       if (isNew) {
         id = "u-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -1645,9 +1776,20 @@ button { cursor: pointer; }
         for (var k in data) existing[k] = data[k];
         delete existing.sample;
       }
+      var saved = findSong(id);
+      if (later) saved.unverified = true; else delete saved.unverified;
       save(KEY, songs);
+      if (isNew && fromDraft && fromDraft.photos && fromDraft.photos.length) {
+        Promise.all(fromDraft.photos.map(shrinkPhoto)).then(function (small) { photosPut(id, small); });
+      }
+      var wasScan = isNew && fromDraft && fromDraft.scanned;
       draft = null;
-      toast(isNew ? "Song added" : "Song saved");
+      if (wasScan && later && scanState !== "off") {
+        // Straight on to the next sheet: snap them all now, check the words later.
+        lastSaved = data.title; photos = [];
+        return go({ name: "scan" }, true);
+      }
+      toast(isNew ? "Song added" : later ? "Saved. It still needs checking." : "Song saved");
       if (isNew) go({ name: "song", id: id }, true);
       else history.back();  // return to the song page it was opened from
     });
@@ -1658,6 +1800,7 @@ button { cursor: pointer; }
       document.getElementById("del-yes").addEventListener("click", function () {
         songs = songs.filter(function (x) { return x.id !== view.id; });
         playlists.forEach(function (pl) { pl.items = pl.items.filter(function (id) { return id !== view.id; }); });
+        photosDel(view.id);
         savePlaylists();
         delete prefs.speeds[view.id]; save(PREFS, prefs);
         save(KEY, songs);
