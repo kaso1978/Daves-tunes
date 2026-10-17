@@ -1,0 +1,1036 @@
+<title>Dave's Tunes</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#0a6b55">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Dave's Tunes">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Atkinson+Hyperlegible+Mono:wght@400;700&family=Zilla+Slab:wght@600;700&display=swap">
+<style>
+/* Layout: one column songbook. List view, then a song "stage" with a fixed control bar at the bottom. Big targets throughout. */
+:root {
+  --bg: #f3f5f4;
+  --surface: #ffffff;
+  --ink: #16201d;
+  --muted: #56635e;
+  --line: #d6ddda;
+  --accent: #0a6b55;
+  --accent-ink: #ffffff;
+  --accent-soft: #e0efe9;
+  --danger: #b42318;
+  --font-display: "Zilla Slab", Georgia, "Times New Roman", serif;
+  --font-body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-lyrics: "Atkinson Hyperlegible Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --gutter-l: max(16px, env(safe-area-inset-left, 0px));
+  --gutter-r: max(16px, env(safe-area-inset-right, 0px));
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1413; --surface: #171e1c; --ink: #edf3f0; --muted: #9db0a8; --line: #2a3532;
+    --accent: #45c79f; --accent-ink: #062219; --accent-soft: #163029; --danger: #ff7b6e;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1413; --surface: #171e1c; --ink: #edf3f0; --muted: #9db0a8; --line: #2a3532;
+  --accent: #45c79f; --accent-ink: #062219; --accent-soft: #163029; --danger: #ff7b6e;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+.vh { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 18px; line-height: 1.45;
+  padding-left: var(--gutter-l); padding-right: var(--gutter-r);
+}
+body::before {
+  content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px);
+  z-index: 10; background: var(--bg);
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.wrap { max-width: 760px; margin: 0 auto; }
+
+/* ---------- Buttons ---------- */
+.btn {
+  min-height: 56px; padding: 0 20px; border-radius: 14px; border: 2px solid var(--line);
+  background: var(--surface); font-weight: 700; font-size: 18px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+}
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.danger { color: var(--danger); border-color: currentColor; background: transparent; }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn svg { width: 24px; height: 24px; flex: none; }
+
+/* ---------- Top bar ---------- */
+.topbar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: var(--bg); display: flex; align-items: center; gap: 12px;
+  padding-block: 12px; border-bottom: 1px solid var(--line);
+}
+.topbar h1 {
+  font-family: var(--font-display); font-weight: 700; font-size: 30px; line-height: 1.1;
+  margin: 0; flex: 1; min-width: 0; text-wrap: balance;
+}
+.topbar .small-title {
+  font-family: var(--font-display); font-weight: 600; font-size: 22px; margin: 0;
+  flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ---------- List view ---------- */
+.search {
+  margin-top: 16px; display: flex; align-items: center; gap: 10px;
+  background: var(--surface); border: 2px solid var(--line); border-radius: 16px; padding: 0 16px;
+}
+.search:focus-within { border-color: var(--accent); }
+.search svg { width: 26px; height: 26px; color: var(--muted); flex: none; }
+.search input {
+  flex: 1; min-width: 0; border: 0; background: transparent; font-size: 20px; min-height: 60px; outline: none;
+}
+.count { color: var(--muted); font-size: 16px; margin: 16px 4px 8px; }
+.songs { list-style: none; margin: 0 0 120px; padding: 0; display: grid; gap: 10px; }
+.song-row {
+  width: 100%; text-align: left; display: flex; align-items: center; gap: 14px;
+  background: var(--surface); border: 2px solid var(--line); border-radius: 16px;
+  padding: 14px 16px; min-height: 76px;
+}
+.song-row:active { border-color: var(--accent); }
+.song-row .info { flex: 1; min-width: 0; }
+.song-row .t { font-weight: 700; font-size: 21px; line-height: 1.2; display: block; overflow-wrap: anywhere; }
+.song-row .a { color: var(--muted); font-size: 16px; display: block; }
+.tag {
+  display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; margin-left: 6px;
+  vertical-align: 2px;
+}
+.capo-chip {
+  flex: none; font-family: var(--font-lyrics); font-weight: 700; font-size: 22px;
+  background: var(--accent-soft); color: var(--accent); border-radius: 12px; padding: 8px 12px;
+  font-variant-numeric: tabular-nums;
+}
+.empty { text-align: center; color: var(--muted); padding: 40px 12px; font-size: 19px; }
+.fab {
+  position: fixed; z-index: 6;
+  right: calc(var(--gutter-r) + 4px); bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  min-height: 64px; padding: 0 24px; border-radius: 32px; font-size: 20px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.18);
+}
+
+/* ---------- Song view ---------- */
+.song-head { padding-block: 20px 8px; display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.song-head .names { flex: 1 1 260px; min-width: 0; }
+.song-head h2 {
+  font-family: var(--font-display); font-weight: 700; font-size: 36px; line-height: 1.1; margin: 0;
+  text-wrap: balance; overflow-wrap: anywhere;
+}
+.song-head .artist { color: var(--muted); font-size: 18px; margin-top: 4px; }
+.plate {
+  flex: none; background: var(--accent); color: var(--accent-ink); border-radius: 16px;
+  padding: 10px 18px 12px; text-align: center; min-width: 120px;
+}
+.plate .big { font-family: var(--font-lyrics); font-weight: 700; font-size: 44px; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.plate .small { font-size: 14px; font-weight: 700; letter-spacing: .04em; opacity: .9; }
+.lyrics {
+  font-family: var(--font-lyrics); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere;
+  padding-block: 12px 0; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.lyrics .ln { min-height: 1.5em; }
+.lyrics .chord { color: var(--accent); font-weight: 700; }
+.lyrics .sung { line-height: 2.35; }
+.lyrics .ch { position: relative; }
+.lyrics .ch::before {
+  content: attr(data-c); position: absolute; left: 0; top: -1.05em;
+  color: var(--accent); font-weight: 700; font-size: .85em; line-height: 1; white-space: nowrap;
+}
+.lyrics .section {
+  font-family: var(--font-body); font-weight: 700; color: var(--muted);
+  font-size: .7em; letter-spacing: .08em; text-transform: uppercase; margin-top: .6em; margin-bottom: .5em;
+}
+.end-space { height: 70vh; display: flex; align-items: flex-start; justify-content: center; color: var(--muted); padding-top: 24px; font-size: 16px; }
+
+.controls {
+  position: fixed; z-index: 6; left: 0; right: 0; bottom: 0;
+  background: var(--surface); border-top: 1px solid var(--line);
+  padding: 10px var(--gutter-r) calc(10px + env(safe-area-inset-bottom, 0px)) var(--gutter-l);
+  box-shadow: 0 -4px 18px rgba(0,0,0,.08);
+}
+.controls .row { max-width: 760px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.group { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.group .lbl { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.group .pair { display: flex; align-items: center; gap: 4px; }
+.group .val { min-width: 1.6em; text-align: center; font-weight: 700; font-size: 20px; font-variant-numeric: tabular-nums; }
+.sq:disabled { opacity: .4; }
+.sq {
+  width: 48px; height: 48px; border-radius: 12px; border: 2px solid var(--line); background: var(--bg);
+  font-weight: 700; font-size: 22px; display: inline-flex; align-items: center; justify-content: center; padding: 0;
+}
+.sq:active { border-color: var(--accent); }
+.sq.aa-small { font-size: 16px; }
+.sq.aa-big { font-size: 26px; }
+.play {
+  width: 76px; height: 76px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-ink);
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  box-shadow: 0 4px 14px rgba(0,0,0,.2);
+}
+.play svg { width: 40px; height: 40px; }
+@media (max-width: 370px) {
+  .sq { width: 42px; height: 42px; }
+  .play { width: 64px; height: 64px; }
+  .group .val { font-size: 18px; }
+}
+
+/* ---------- Editor ---------- */
+.form { display: grid; gap: 18px; padding-block: 20px 140px; }
+.field { display: grid; gap: 6px; }
+.field label { font-weight: 700; font-size: 17px; }
+.field .hint { color: var(--muted); font-size: 15px; }
+.field input, .field select, .field textarea {
+  width: 100%; min-height: 56px; border: 2px solid var(--line); border-radius: 12px;
+  background: var(--surface); padding: 10px 14px; font-size: 20px;
+}
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); outline: none; }
+.field textarea { min-height: 50vh; font-family: var(--font-lyrics); font-size: 17px; line-height: 1.45; resize: vertical; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.preview { font-family: var(--font-lyrics); font-weight: 700; font-size: 28px; color: var(--accent); }
+.form-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.form-actions .btn { flex: 1 1 140px; }
+.confirm {
+  border: 2px solid var(--danger); border-radius: 14px; padding: 14px; display: grid; gap: 12px; background: var(--surface);
+}
+.confirm p { margin: 0; font-weight: 700; }
+.error { color: var(--danger); font-weight: 700; }
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 20;
+  bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+  background: var(--ink); color: var(--bg); padding: 12px 20px; border-radius: 12px; font-weight: 700;
+  max-width: calc(100% - 32px); text-align: center;
+}
+.label { font-weight: 700; font-size: 17px; }
+.btn.big { min-height: 64px; font-size: 20px; border-radius: 16px; }
+.btn:disabled, .sq:disabled { opacity: .4; cursor: default; }
+.stepper { display: flex; align-items: center; gap: 12px; }
+.stepper .sq { width: 60px; height: 60px; font-size: 28px; background: var(--surface); }
+.stepper output { min-width: 4.5em; text-align: center; font-weight: 700; font-size: 24px; font-variant-numeric: tabular-nums; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  min-width: 56px; min-height: 52px; padding: 0 12px; border-radius: 12px; border: 2px solid var(--line);
+  background: var(--surface); font-family: var(--font-lyrics); font-weight: 700; font-size: 20px;
+}
+.chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.showas { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.showas .hint { color: var(--muted); font-size: 15px; }
+.banner {
+  display: flex; gap: 12px; align-items: flex-start; background: var(--accent-soft); color: var(--ink);
+  border-radius: 14px; padding: 14px 16px;
+}
+.banner svg { width: 28px; height: 28px; flex: none; color: var(--accent); }
+.banner p { margin: 0; }
+.savebar {
+  position: fixed; z-index: 6; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line);
+  padding: 12px var(--gutter-r) calc(12px + env(safe-area-inset-bottom, 0px)) var(--gutter-l);
+}
+.savebar .btn { width: 100%; max-width: 760px; margin: 0 auto; display: flex; }
+.danger-zone { display: grid; gap: 12px; margin-top: 12px; padding-top: 18px; border-top: 1px solid var(--line); }
+.leave { border: 2px solid var(--danger); border-radius: 14px; padding: 14px; margin-top: 14px; display: grid; gap: 12px; background: var(--surface); }
+.leave p { margin: 0; font-weight: 700; }
+.choices { display: grid; gap: 14px; padding-block: 20px; }
+.choice {
+  display: flex; align-items: center; gap: 16px; text-align: left; width: 100%;
+  background: var(--surface); border: 2px solid var(--line); border-radius: 18px; padding: 20px; min-height: 110px;
+}
+.choice:not(:disabled):not(.off):active { border-color: var(--accent); }
+.choice > span:last-child { display: grid; gap: 4px; min-width: 0; }
+.choice b { font-size: 22px; }
+.choice span span { color: var(--muted); font-size: 17px; }
+.choice .ico {
+  flex: none; width: 64px; height: 64px; border-radius: 16px; background: var(--accent-soft); color: var(--accent);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.choice .ico svg { width: 34px; height: 34px; }
+.choice.off { opacity: .7; }
+.choice:disabled { opacity: .6; }
+.scan { display: grid; gap: 18px; padding-block: 20px 60px; }
+.scan .lead { font-size: 19px; margin: 0; }
+.scan-actions { display: grid; gap: 12px; }
+.thumbs { display: flex; flex-wrap: wrap; gap: 12px; }
+.thumb { position: relative; margin: 0; width: 132px; }
+.thumb img { width: 132px; height: 170px; object-fit: cover; border-radius: 12px; border: 2px solid var(--line); display: block; }
+.thumb .sq { position: absolute; top: 6px; right: 6px; width: 44px; height: 44px; font-size: 26px; background: var(--surface); }
+.thumb figcaption { text-align: center; color: var(--muted); font-size: 15px; margin-top: 4px; }
+.reading { display: grid; justify-items: center; gap: 14px; text-align: center; padding: 20px; background: var(--surface); border: 2px solid var(--line); border-radius: 16px; }
+.reading p { margin: 0; font-size: 19px; }
+.spinner { width: 48px; height: 48px; border-radius: 50%; border: 5px solid var(--accent-soft); border-top-color: var(--accent); animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap" id="app"></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Storage (falls back to memory if the browser blocks it) ----------
+  var KEY = "davesTunes.songs.v1";
+  var PREFS = "davesTunes.prefs.v1";
+  var mem = {};
+  function load(key, fallback) {
+    try { var v = localStorage.getItem(key); if (v) return JSON.parse(v); } catch (e) {}
+    return key in mem ? mem[key] : fallback;
+  }
+  function save(key, val) {
+    mem[key] = val;
+    try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
+  }
+
+  // Traditional / public-domain example songs
+  var SAMPLES = [
+    { id: "s-red-river", sample: true, title: "Red River Valley", artist: "Traditional", capo: 1, chord: "C", lyrics:
+"[Verse 1]\n" +
+"C                         G\n" +
+"From this valley they say you are going\n" +
+"C                            G\n" +
+"We will miss your bright eyes and sweet smile\n" +
+"C                     C7      F\n" +
+"For they say you are taking the sunshine\n" +
+"   G                         C\n" +
+"That has brightened our pathway a while\n\n" +
+"[Chorus]\n" +
+"C                       G\n" +
+"Come and sit by my side if you love me\n" +
+"C                          G\n" +
+"Do not hasten to bid me adieu\n" +
+"C                  C7    F\n" +
+"But remember the Red River Valley\n" +
+"    G                      C\n" +
+"And the one who has loved you so true\n\n" +
+"[Verse 2]\n" +
+"C                          G\n" +
+"Won't you think of the valley you're leaving\n" +
+"C                          G\n" +
+"Oh how lonely, how sad it will be\n" +
+"C                    C7       F\n" +
+"Oh think of the fond heart you're breaking\n" +
+"    G                     C\n" +
+"And the grief you are causing to me\n\n" +
+"[Chorus]\n" +
+"Come and sit by my side if you love me\n" +
+"Do not hasten to bid me adieu\n" +
+"But remember the Red River Valley\n" +
+"And the one who has loved you so true" },
+
+    { id: "s-amazing-grace", sample: true, title: "Amazing Grace", artist: "John Newton", capo: 0, chord: "G", lyrics:
+"[Verse 1]\n" +
+"G            G7       C       G\n" +
+"Amazing grace, how sweet the sound\n" +
+"                      D\n" +
+"That saved a wretch like me\n" +
+"G           G7        C      G\n" +
+"I once was lost, but now am found\n" +
+"            D        G\n" +
+"Was blind, but now I see\n\n" +
+"[Verse 2]\n" +
+"'Twas grace that taught my heart to fear\n" +
+"And grace my fears relieved\n" +
+"How precious did that grace appear\n" +
+"The hour I first believed\n\n" +
+"[Verse 3]\n" +
+"Through many dangers, toils and snares\n" +
+"I have already come\n" +
+"'Tis grace hath brought me safe thus far\n" +
+"And grace will lead me home\n\n" +
+"[Verse 4]\n" +
+"When we've been there ten thousand years\n" +
+"Bright shining as the sun\n" +
+"We've no less days to sing God's praise\n" +
+"Than when we first begun" },
+
+    { id: "s-home-range", sample: true, title: "Home on the Range", artist: "Traditional", capo: 2, chord: "G", lyrics:
+"[Verse 1]\n" +
+"G                   C\n" +
+"Oh give me a home where the buffalo roam\n" +
+"G                         A7      D\n" +
+"Where the deer and the antelope play\n" +
+"G                       C\n" +
+"Where seldom is heard a discouraging word\n" +
+"G                D7         G\n" +
+"And the skies are not cloudy all day\n\n" +
+"[Chorus]\n" +
+"D7      G\n" +
+"Home, home on the range\n" +
+"                         A7      D\n" +
+"Where the deer and the antelope play\n" +
+"G                       C\n" +
+"Where seldom is heard a discouraging word\n" +
+"G                D7         G\n" +
+"And the skies are not cloudy all day\n\n" +
+"[Verse 2]\n" +
+"How often at night when the heavens are bright\n" +
+"With the light from the glittering stars\n" +
+"Have I stood here amazed and asked as I gazed\n" +
+"If their glory exceeds that of ours\n\n" +
+"[Chorus]\n" +
+"Home, home on the range\n" +
+"Where the deer and the antelope play\n" +
+"Where seldom is heard a discouraging word\n" +
+"And the skies are not cloudy all day" },
+
+    { id: "s-circle", sample: true, title: "Will the Circle Be Unbroken", artist: "Habershon & Gabriel, 1907", capo: 3, chord: "D", lyrics:
+"[Verse 1]\n" +
+"D                      D7\n" +
+"There are loved ones in the glory\n" +
+"G                       D\n" +
+"Whose dear forms you often miss\n" +
+"D                         \n" +
+"When you close your earthly story\n" +
+"          A7            D\n" +
+"Will you join them in their bliss?\n\n" +
+"[Chorus]\n" +
+"D                    D7\n" +
+"Will the circle be unbroken\n" +
+"G                   D\n" +
+"By and by, by and by?\n" +
+"D\n" +
+"Is a better home awaiting\n" +
+"          A7       D\n" +
+"In the sky, in the sky?\n\n" +
+"[Verse 2]\n" +
+"In the joyous days of childhood\n" +
+"Oft they told of wondrous love\n" +
+"Pointed to the dying Saviour\n" +
+"Now they dwell with Him above\n\n" +
+"[Chorus]\n" +
+"Will the circle be unbroken\n" +
+"By and by, by and by?\n" +
+"Is a better home awaiting\n" +
+"In the sky, in the sky?" }
+  ];
+
+  var songs = load(KEY, null);
+  if (!Array.isArray(songs)) { songs = SAMPLES.slice(); save(KEY, songs); }
+  var prefs = load(PREFS, { font: 26, speed: 4, speeds: {} });
+  if (!prefs.speeds) prefs.speeds = {};
+
+  var FONT_MIN = 16, FONT_MAX = 56, FONT_STEP = 2;
+  var SPEED_MIN = 1, SPEED_MAX = 10;
+
+  // ---------- Helpers ----------
+  var app = document.getElementById("app");
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function capoLabel(s) { return (s.capo || 0) + "-" + (s.chord || "?"); }
+  function capoWords(s) {
+    var c = Number(s.capo) || 0;
+    return (c ? "Capo " + c : "No capo") + " · Start " + (s.chord || "?");
+  }
+  function byTitle(a, b) { return a.title.localeCompare(b.title, undefined, { sensitivity: "base" }); }
+  function findSong(id) { for (var i = 0; i < songs.length; i++) if (songs[i].id === id) return songs[i]; return null; }
+  function toast(msg) {
+    var t = document.getElementById("toast");
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toast._t); toast._t = setTimeout(function () { t.hidden = true; }, 2200);
+  }
+  var ICON = {
+    back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+    search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>',
+    pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
+    camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h2.5l1.5-2h6l1.5 2H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="4"/></svg>',
+    keys: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+    edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>'
+  };
+
+  // Lines made only of chord names get the chord colour; [Verse] style lines become small labels.
+  var CHORD = /^\(?[A-G](#|b)?(m|maj|min|dim|aug|sus|add|M)?\d*(sus\d*|add\d*|b\d+|#\d+)?(\/[A-G](#|b)?)?\)?$/;
+  function lineClass(line) {
+    var t = line.trim();
+    if (!t) return "ln";
+    if (/^\[.+\]$/.test(t) || /^(verse|chorus|bridge|intro|outro|refrain|tag|ending)\b[\w\s]*:?$/i.test(t)) return "ln section";
+    var parts = t.split(/\s+/), chords = 0;
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i] === "|" || parts[i] === "-" || /^x\d$/i.test(parts[i])) continue;
+      if (!CHORD.test(parts[i])) return "ln";
+      chords++;
+    }
+    return chords ? "ln chord" : "ln";
+  }
+  // A chord line sitting over a lyric line is merged into it: each chord rides above the letter it was
+  // typed over, so the chords stay in place when big text makes the words wrap on a phone.
+  function mergeChords(chordLine, lyric) {
+    var marks = [], m, re = /\S+/g;
+    while ((m = re.exec(chordLine))) marks.push({ col: m.index, c: m[0] });
+    var last = marks.length ? marks[marks.length - 1].col : 0;
+    while (lyric.length < last) lyric += " ";
+    var out = "", at = 0;
+    marks.forEach(function (k) {
+      out += esc(lyric.slice(at, k.col)) + '<span class="ch" data-c="' + esc(k.c) + '"></span>';
+      at = k.col;
+    });
+    return '<div class="ln sung">' + out + esc(lyric.slice(at)) + "</div>";
+  }
+  function renderLyrics(text) {
+    var lines = String(text || "").replace(/\r/g, "").split("\n"), html = "";
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i], cls = lineClass(l), next = lines[i + 1];
+      if (cls === "ln chord" && next != null && next.trim() && lineClass(next) === "ln") {
+        html += mergeChords(l, next); i++; continue;
+      }
+      var shown = cls === "ln section" ? l.trim().replace(/^\[|\]$/g, "") : l;
+      html += '<div class="' + cls + '">' + (esc(shown) || "&nbsp;") + "</div>";
+    }
+    return html;
+  }
+
+  // ---------- Navigation (phone back button works too) ----------
+  var view = { name: "list" };
+  var query = "";
+  function go(next, replace) {
+    stopScroll();
+    view = next;
+    try { history[replace ? "replaceState" : "pushState"](next, ""); } catch (e) {}
+    render();
+    window.scrollTo(0, 0);
+  }
+  window.addEventListener("popstate", function (e) {
+    stopScroll();
+    view = (e.state && e.state.name) ? e.state : { name: "list" };
+    render();
+    window.scrollTo(0, 0);
+  });
+
+  function render() {
+    if (view.name === "song" && findSong(view.id)) return renderSong(findSong(view.id));
+    if (view.name === "edit") return renderEdit(view.id ? findSong(view.id) : null, view.draft ? draft : null);
+    if (view.name === "add") return renderAdd();
+    if (view.name === "scan") return renderScan();
+    renderList();
+  }
+
+  // ---------- List ----------
+  function renderList() {
+    document.title = "Dave's Tunes";
+    app.innerHTML =
+      '<header class="topbar"><h1>Dave’s Tunes</h1></header>' +
+      '<label class="search" for="q">' + ICON.search +
+      '<input id="q" type="search" placeholder="Find a song" autocomplete="off" value="' + esc(query) + '"></label>' +
+      '<p class="count" id="count"></p><ul class="songs" id="list"></ul>' +
+      '<button class="btn primary fab" id="add" type="button">' + ICON.plus + 'Add song</button>';
+    var q = document.getElementById("q");
+    q.addEventListener("input", function () { query = q.value; fillList(); });
+    document.getElementById("add").addEventListener("click", function () { go({ name: "add" }); });
+    fillList();
+  }
+  function fillList() {
+    var q = query.trim().toLowerCase();
+    var shown = songs.slice().sort(byTitle).filter(function (s) {
+      if (!q) return true;
+      return (s.title + " " + (s.artist || "") + " " + (s.lyrics || "")).toLowerCase().indexOf(q) !== -1;
+    });
+    var list = document.getElementById("list");
+    document.getElementById("count").textContent = q
+      ? shown.length + " of " + songs.length + " songs"
+      : songs.length + (songs.length === 1 ? " song" : " songs");
+    if (!shown.length) {
+      list.innerHTML = '<li class="empty">' + (songs.length
+        ? "No songs match “" + esc(query.trim()) + "”."
+        : "No songs yet. Tap <b>Add song</b> to put in the first one.") + "</li>";
+      return;
+    }
+    list.innerHTML = shown.map(function (s) {
+      return '<li><button class="song-row" type="button" data-id="' + esc(s.id) + '">' +
+        '<span class="info"><span class="t">' + esc(s.title) + (s.sample ? '<span class="tag">Example</span>' : "") + "</span>" +
+        (s.artist ? '<span class="a">' + esc(s.artist) + "</span>" : "") + "</span>" +
+        '<span class="capo-chip" aria-label="' + esc(capoWords(s)) + '">' + esc(capoLabel(s)) + "</span></button></li>";
+    }).join("");
+    list.querySelectorAll(".song-row").forEach(function (b) {
+      b.addEventListener("click", function () { go({ name: "song", id: b.getAttribute("data-id") }); });
+    });
+  }
+
+  // ---------- Song ----------
+  var cur = null;
+  function speedFor(s) { return prefs.speeds[s.id] || prefs.speed; }
+
+  function renderSong(s) {
+    cur = s;
+    document.title = s.title + " · Dave's Tunes";
+    app.innerHTML =
+      '<header class="topbar"><button class="btn ghost" id="back" type="button" aria-label="Back to songs">' + ICON.back + "Songs</button>" +
+      '<p class="small-title">' + esc(s.title) + "</p>" +
+      '<button class="btn ghost" id="edit" type="button">' + ICON.edit + "Edit</button></header>" +
+      '<section class="song-head"><div class="names"><h2>' + esc(s.title) + "</h2>" +
+      (s.artist ? '<div class="artist">' + esc(s.artist) + "</div>" : "") + "</div>" +
+      '<div class="plate"><div class="big">' + esc(capoLabel(s)) + '</div><div class="small">' + esc(capoWords(s)) + "</div></div></section>" +
+      '<div class="lyrics" id="lyrics" title="Tap to start or stop scrolling">' + renderLyrics(s.lyrics) + "</div>" +
+      '<div class="end-space">End of song</div>' +
+      '<div class="controls"><div class="row">' +
+        '<div class="group"><span class="lbl">Text size</span><div class="pair">' +
+          '<button class="sq aa-small" id="fdown" type="button" aria-label="Smaller text">A</button>' +
+          '<span class="val" id="fval"></span>' +
+          '<button class="sq aa-big" id="fup" type="button" aria-label="Bigger text">A</button></div></div>' +
+        '<button class="play" id="play" type="button" aria-label="Start scrolling">' + ICON.play + "</button>" +
+        '<div class="group"><span class="lbl">Speed</span><div class="pair">' +
+          '<button class="sq" id="sdown" type="button" aria-label="Slower">−</button>' +
+          '<span class="val" id="sval"></span>' +
+          '<button class="sq" id="sup" type="button" aria-label="Faster">+</button></div></div>' +
+      "</div></div>";
+
+    applyFont();
+    showSpeed();
+    document.getElementById("back").addEventListener("click", goBack);
+    document.getElementById("edit").addEventListener("click", function () { go({ name: "edit", id: s.id }); });
+    document.getElementById("play").addEventListener("click", togglePlay);
+    document.getElementById("lyrics").addEventListener("click", togglePlay);
+    document.getElementById("fdown").addEventListener("click", function () { setFont(prefs.font - FONT_STEP); });
+    document.getElementById("fup").addEventListener("click", function () { setFont(prefs.font + FONT_STEP); });
+    document.getElementById("sdown").addEventListener("click", function () { setSpeed(speedFor(s) - 1); });
+    document.getElementById("sup").addEventListener("click", function () { setSpeed(speedFor(s) + 1); });
+  }
+
+  function applyFont() {
+    var el = document.getElementById("lyrics");
+    if (el) el.style.fontSize = prefs.font + "px";
+    var v = document.getElementById("fval");
+    if (v) v.textContent = prefs.font;
+    var lower = document.getElementById("fdown"), upper = document.getElementById("fup");
+    if (lower) lower.disabled = prefs.font <= FONT_MIN;
+    if (upper) upper.disabled = prefs.font >= FONT_MAX;
+  }
+  function setFont(n) {
+    prefs.font = Math.max(FONT_MIN, Math.min(FONT_MAX, n));
+    save(PREFS, prefs);
+    applyFont();
+  }
+  function showSpeed() {
+    var v = document.getElementById("sval");
+    if (v && cur) v.textContent = speedFor(cur);
+  }
+  function setSpeed(n) {
+    if (!cur) return;
+    n = Math.max(SPEED_MIN, Math.min(SPEED_MAX, n));
+    prefs.speeds[cur.id] = n;   // each song remembers its own speed
+    prefs.speed = n;            // new songs start at the last speed used
+    save(PREFS, prefs);
+    showSpeed();
+  }
+
+  // ---------- Auto-scroll ----------
+  var playing = false, raf = 0, lastT = 0, pos = 0, wakeLock = null;
+  function pxPerSecond() {
+    // Speed 1 is a slow ballad, 10 is quick. Scaled by text size so lines pass at the same pace.
+    var level = cur ? speedFor(cur) : prefs.speed;
+    return (6 + (level - 1) * 5) * (prefs.font / 24);
+  }
+  function maxScroll() {
+    return Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+  }
+  function tick(t) {
+    if (!playing) return;
+    if (!lastT) lastT = t;
+    var dt = Math.min(0.1, (t - lastT) / 1000);
+    lastT = t;
+    var y = window.scrollY;
+    if (Math.abs(y - pos) > 3) pos = y;  // he dragged the page; carry on from there
+    pos += pxPerSecond() * dt;
+    if (pos >= maxScroll()) { window.scrollTo(0, maxScroll()); stopScroll(); return; }
+    window.scrollTo(0, pos);
+    raf = requestAnimationFrame(tick);
+  }
+  function setPlayIcon() {
+    var b = document.getElementById("play");
+    if (!b) return;
+    b.innerHTML = playing ? ICON.pause : ICON.play;
+    b.setAttribute("aria-label", playing ? "Stop scrolling" : "Start scrolling");
+  }
+  function startScroll() {
+    if (playing) return;
+    if (window.scrollY >= maxScroll() - 2) window.scrollTo(0, 0);  // finished last time: start over
+    playing = true; lastT = 0; pos = window.scrollY;
+    setPlayIcon();
+    raf = requestAnimationFrame(tick);
+    try {
+      if (navigator.wakeLock) navigator.wakeLock.request("screen").then(function (l) { wakeLock = l; }).catch(function () {});
+    } catch (e) {}
+  }
+  function stopScroll() {
+    playing = false; cancelAnimationFrame(raf);
+    setPlayIcon();
+    if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+  }
+  function togglePlay() { playing ? stopScroll() : startScroll(); }
+  document.addEventListener("visibilitychange", function () { if (document.hidden) stopScroll(); });
+  document.addEventListener("keydown", function (e) {
+    if (view.name !== "song") return;
+    if (e.key === " " || e.key === "Enter") { e.preventDefault(); togglePlay(); }
+  });
+
+  // ---------- Photo scanning ----------
+  // Inside a Claude viewer the sheet is read by Claude (on the viewer's own account, if they allow it).
+  // As the installed app it is read on the phone by Tesseract, which downloads once and then works offline.
+  var scanner = null, scanState = "checking", photos = [], maxPhotos = 4, scanCtl = null;
+  var inViewer = !!(window.claude && window.claude.use);
+  var engine = inViewer ? "claude" : "ocr";
+  // The reader's files ship with the app (ocr/ folder), so it needs no outside service.
+  function ocrUrl(path) { return new URL("ocr/" + path, location.href).href; }
+  (function () {
+    if (!inViewer) { scanState = "ready"; return; }
+    window.claude.use("sample").then(function (s) {
+      if (!s) throw 0;
+      return s.limits().then(function (lim) {
+        if (!lim || !lim.images) throw 0;
+        scanner = s; maxPhotos = Math.max(1, Math.min(4, lim.images.maxCount || 1)); scanState = "ready";
+      });
+    }).catch(function () { scanState = "off"; })
+      .then(function () { if (view.name === "add" || view.name === "scan") render(); });
+  })();
+
+  var SCAN_PROMPT = [
+    "These photos show one song sheet from a guitar player's songbook. It may be printed or handwritten, and may run over several pages.",
+    "Copy it out exactly. Reply with only a JSON object like:",
+    '{"title": "Red River Valley", "artist": "", "capo": 1, "chord": "C", "lyrics": "[Verse 1]\\nC                         G\\nFrom this valley they say you are going\\n..."}',
+    "Rules:",
+    "- The player writes the capo and starting chord together like \"1-C\" (capo on fret 1, start on C) or \"Capo 3\". capo is a whole number 0 to 12; use 0 if no capo is shown.",
+    "- chord is the starting chord. If none is marked, use the first chord in the song, or \"\" if there are no chords.",
+    "- artist is \"\" unless the sheet names who sings or wrote it.",
+    "- In lyrics keep every line break and the blank lines between verses.",
+    "- Where chords are written above the words, put them on their own line straight above that lyric line, padded with spaces so each chord sits over the letter it is written above.",
+    "- If the sheet labels parts (Verse, Chorus, Bridge), write them as [Verse 1], [Chorus] and so on, on their own line.",
+    "- If a word can't be read, write [?] in its place. Don't add or fix anything that isn't on the sheet."
+  ].join("\n");
+
+  function renderAdd() {
+    document.title = "Add song · Dave's Tunes";
+    var scanCard =
+      scanState === "off"
+        ? '<div class="choice off"><span class="ico">' + ICON.camera + '</span><span><b>Scan a paper sheet</b>' +
+          "<span>Photo reading isn’t available on this device. Type the song in instead.</span></span></div>"
+        : '<button class="choice" id="go-scan" type="button"' + (scanState === "checking" ? " disabled" : "") + '>' +
+          '<span class="ico">' + ICON.camera + "</span><span><b>Scan a paper sheet</b>" +
+          "<span>" + (scanState === "checking" ? "Getting the camera ready…" : "Take a photo and the words fill in for you to check.") + "</span></span></button>";
+    app.innerHTML =
+      '<header class="topbar"><button class="btn ghost" id="back" type="button">' + ICON.back + "Songs</button>" +
+      '<p class="small-title">Add a song</p></header>' +
+      '<div class="choices">' + scanCard +
+      '<button class="choice" id="go-type" type="button"><span class="ico">' + ICON.keys + "</span>" +
+      "<span><b>Type it in</b><span>Fill in the title, capo, chord and words yourself.</span></span></button></div>";
+    document.getElementById("back").addEventListener("click", goBack);
+    var gs = document.getElementById("go-scan");
+    if (gs) gs.addEventListener("click", function () { photos = []; go({ name: "scan" }); });
+    document.getElementById("go-type").addEventListener("click", function () { go({ name: "edit" }, true); });
+  }
+
+  function renderScan() {
+    if (scanState === "off") return renderAdd();
+    document.title = "Scan a sheet · Dave's Tunes";
+    var thumbs = photos.map(function (f, i) {
+      return '<figure class="thumb"><img alt="Page ' + (i + 1) + '" src="' + f.url + '">' +
+        '<button class="sq" type="button" data-rm="' + i + '" aria-label="Remove page ' + (i + 1) + '">×</button>' +
+        "<figcaption>Page " + (i + 1) + "</figcaption></figure>";
+    }).join("");
+    var canAdd = photos.length < maxPhotos;
+    app.innerHTML =
+      '<header class="topbar"><button class="btn ghost" id="back" type="button">' + ICON.back + "Back</button>" +
+      '<p class="small-title">Scan a paper sheet</p></header>' +
+      '<div class="scan">' +
+        (photos.length
+          ? '<p class="lead">' + (photos.length === 1 ? "Got it." : "Got " + photos.length + " pages.") +
+            " If the song runs onto another page, add that too.</p><div class=\"thumbs\">" + thumbs + "</div>"
+          : '<p class="lead">Lay the sheet flat in good light and take a photo from straight above, so all the words are in the picture.</p>') +
+        // Real <label>s over the file inputs: some phones ignore a script "click" on a hidden input
+        '<input class="vh" id="photo" type="file" accept="image/*" capture="environment" tabindex="-1">' +
+        '<input class="vh" id="photo-lib" type="file" accept="image/*" tabindex="-1">' +
+        '<div class="scan-actions">' +
+          (canAdd ? '<label class="btn ' + (photos.length ? "" : "primary ") + 'big" for="photo" tabindex="0" role="button">' + ICON.camera +
+            (photos.length ? "Add another page" : "Take a photo") + "</label>" : "") +
+          (photos.length ? '<button class="btn primary big" id="read" type="button">' + ICON.check + "Read the sheet</button>" : "") +
+          (canAdd && !photos.length ? '<label class="btn ghost" for="photo-lib" tabindex="0" role="button">Choose a photo already taken</label>' : "") +
+        "</div>" +
+        '<div class="reading" id="reading" hidden><div class="spinner" aria-hidden="true"></div>' +
+          '<p><b>Reading the sheet…</b><br>This can take up to a minute.</p>' +
+          '<button class="btn" id="stop" type="button">Stop</button></div>' +
+        '<p class="error" id="scan-error" role="alert" hidden></p>' +
+      "</div>";
+    document.getElementById("back").addEventListener("click", goBack);
+    function addFile(input) {
+      var f = input.files && input.files[0];
+      if (!f) return;
+      photos.push({ file: f, url: URL.createObjectURL(f) });
+      renderScan();
+    }
+    var cam = document.getElementById("photo"), lib = document.getElementById("photo-lib");
+    cam.addEventListener("change", function () { addFile(cam); });
+    lib.addEventListener("change", function () { addFile(lib); });
+    app.querySelectorAll("label[for]").forEach(function (l) {
+      l.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); document.getElementById(l.htmlFor).click(); }
+      });
+    });
+    app.querySelectorAll("[data-rm]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var i = Number(b.getAttribute("data-rm"));
+        URL.revokeObjectURL(photos[i].url); photos.splice(i, 1); renderScan();
+      });
+    });
+    var rd = document.getElementById("read"); if (rd) rd.addEventListener("click", readSheet);
+    document.getElementById("stop").addEventListener("click", function () { if (scanCtl) scanCtl.abort(); });
+  }
+
+  var SCAN_ERRORS = {
+    not_granted: "Photo reading was turned off for this page, so please type the song in.",
+    sampling_disabled: "Photo reading isn’t available on this account, so please type the song in.",
+    images_unavailable: "Photo reading isn’t available on this device, so please type the song in.",
+    image_rejected: "That photo couldn’t be opened. Try taking it again.",
+    rate_limited: "Too many sheets read in a short time. Wait a few minutes and try again.",
+    session_expired: "You’ve been signed out. Sign in again, then try once more.",
+    refused: "This sheet couldn’t be read. Try a clearer photo, or type the song in.",
+    invalid_json: "The sheet came back jumbled. Tap Read the sheet to try again.",
+    empty_completion: "No words were found. Try a clearer, closer photo.",
+    ocr_load: "The photo reader couldn\u2019t start. Connect to Wi-Fi and try again."
+  };
+
+  function loadTesseract() {
+    return new Promise(function (resolve, reject) {
+      if (window.Tesseract) return resolve(window.Tesseract);
+      var s = document.createElement("script");
+      s.src = ocrUrl("tesseract.min.js");
+      s.onload = function () { window.Tesseract ? resolve(window.Tesseract) : reject({ code: "ocr_load" }); };
+      s.onerror = function () { s.remove(); reject({ code: "ocr_load" }); };
+      document.head.appendChild(s);
+    });
+  }
+
+  // Turn the photo reader's plain text into a song: pull out "1-C" / "Capo 3" and a title from the top.
+  function songFromText(text) {
+    var lines = String(text).replace(/\r/g, "").split("\n").map(function (l) { return l.replace(/\s+$/, ""); });
+    var capo = 0, chord = "", title = "";
+    for (var i = 0; i < Math.min(lines.length, 8); i++) {
+      var l = lines[i], m = l.match(/(?:^|\s)(\d{1,2})\s*[-\u2013\u2014]\s*([A-G][#b]?m?)(?=\s|$)/);
+      var c = l.match(/capo\s*(?:on\s*)?(\d{1,2})/i);
+      if (m && Number(m[1]) <= 12) { capo = Number(m[1]); chord = m[2]; lines[i] = l.replace(m[0], "").trim(); break; }
+      if (c && Number(c[1]) <= 12) { capo = Number(c[1]); lines[i] = l.replace(c[0], "").trim(); break; }
+    }
+    while (lines.length && !lines[0].trim()) lines.shift();
+    if (lines.length && lineClass(lines[0]) === "ln") title = lines.shift().trim();
+    if (!chord) {
+      for (var j = 0; j < lines.length && !chord; j++) if (lineClass(lines[j]) === "ln chord") chord = lines[j].trim().split(/\s+/)[0];
+    }
+    // The reader often leaves a blank line between a chord line and its words; close that gap.
+    lines = lines.filter(function (l, k) {
+      return !(!l.trim() && k > 0 && lineClass(lines[k - 1]) === "ln chord" && lines[k + 1] && lineClass(lines[k + 1]) === "ln" && lines[k + 1].trim());
+    });
+    var lyrics = lines.join("\n").replace(/^\s*\n/, "").replace(/\n{3,}/g, "\n\n").replace(/\s+$/, "");
+    return { title: title, artist: "", capo: capo, chord: chord, lyrics: lyrics };
+  }
+
+  function readWithOcr(onProgress) {
+    var worker = null, files = photos.map(function (p) { return p.file; }), texts = [];
+    var stopped = false;
+    scanCtl = { abort: function () { stopped = true; if (worker) worker.terminate(); } };
+    return loadTesseract().then(function (T) {
+      return T.createWorker("eng", 1, {
+        workerPath: ocrUrl("worker.min.js"), corePath: ocrUrl("core"), langPath: ocrUrl("lang"),
+        logger: function (m) {
+          if (m.status === "recognizing text") onProgress(texts.length, files.length, m.progress);
+        }
+      });
+    }).then(function (w) {
+      worker = w;
+      if (stopped) throw { code: "cancelled" };
+      return w.setParameters({ preserve_interword_spaces: "1" });
+    }).then(function () {
+      return files.reduce(function (chain, f) {
+        return chain.then(function () {
+          if (stopped) throw { code: "cancelled" };
+          return worker.recognize(f).then(function (r) { texts.push(r.data.text || ""); });
+        });
+      }, Promise.resolve());
+    }).then(function () {
+      worker.terminate();
+      var song = songFromText(texts.join("\n\n"));
+      if (!song.lyrics && !song.title) throw { code: "empty_completion" };
+      song.ocr = true;
+      return song;
+    }).catch(function (e) {
+      if (worker) try { worker.terminate(); } catch (x) {}
+      throw stopped ? { code: "cancelled" } : (e && e.code ? e : { code: "ocr_load" });
+    });
+  }
+
+  function readWithClaude() {
+    scanCtl = new AbortController();
+    return scanner.json(SCAN_PROMPT, { images: photos.map(function (p) { return p.file; }), signal: scanCtl.signal });
+  }
+
+  function readSheet() {
+    var reading = document.getElementById("reading"), err = document.getElementById("scan-error");
+    var actions = app.querySelector(".scan-actions"), note = reading.querySelector("p");
+    reading.hidden = false; actions.hidden = true; err.hidden = true;
+    var job = engine === "ocr"
+      ? readWithOcr(function (done, total, frac) {
+          var pct = Math.round(((done + (frac || 0)) / total) * 100);
+          note.innerHTML = "<b>Reading the sheet\u2026 " + pct + "%</b><br>Keep this screen open.";
+        })
+      : readWithClaude();
+    job
+      .then(function (r) {
+        if (!r || typeof r !== "object") throw { code: "invalid_json" };
+        var capo = Math.round(Number(r.capo)); if (!(capo >= 0 && capo <= 12)) capo = 0;
+        draft = {
+          title: String(r.title || "").trim(), artist: String(r.artist || "").trim(),
+          capo: capo, chord: String(r.chord || "").trim(), lyrics: String(r.lyrics || "").replace(/\s+$/, ""),
+          scanned: true, ocr: !!r.ocr
+        };
+        photos.forEach(function (p) { URL.revokeObjectURL(p.url); }); photos = [];
+        go({ name: "edit", draft: true }, true);
+      })
+      .catch(function (e) {
+        if (view.name !== "scan") return;
+        reading.hidden = true; actions.hidden = false;
+        if (e && e.code === "cancelled") return;
+        if (e && ["not_granted", "sampling_disabled", "images_unavailable"].indexOf(e.code) !== -1) scanState = "off";
+        err.textContent = (e && SCAN_ERRORS[e.code]) || "Something went wrong reading the sheet. Tap Read the sheet to try again.";
+        err.hidden = false;
+      });
+  }
+
+  // ---------- Add / edit ----------
+  var draft = null;
+  var COMMON_CHORDS = ["C", "D", "E", "F", "G", "A", "B", "Am", "Dm", "Em"];
+  function goBack() { history.length > 1 ? history.back() : go({ name: "list" }, true); }
+
+  function renderEdit(s, fromDraft) {
+    var isNew = !s;
+    s = s || fromDraft || { title: "", artist: "", capo: 0, chord: "", lyrics: "" };
+    document.title = (isNew ? "Add song" : "Edit song") + " · Dave's Tunes";
+    var start = JSON.stringify([s.title, s.artist, Number(s.capo) || 0, s.chord, s.lyrics]);
+    var chips = COMMON_CHORDS.map(function (c) {
+      return '<button class="chip" type="button" data-chord="' + c + '">' + c + "</button>";
+    }).join("");
+    app.innerHTML =
+      '<header class="topbar"><button class="btn ghost" id="cancel" type="button">' + ICON.back + "Cancel</button>" +
+      '<p class="small-title">' + (isNew ? "Add a song" : "Edit song") + "</p></header>" +
+      '<div class="leave" id="leave" hidden><p>Leave without saving? Your changes will be lost.</p>' +
+        '<div class="form-actions"><button class="btn danger" id="leave-yes" type="button">Leave</button>' +
+        '<button class="btn primary" id="leave-no" type="button">Keep editing</button></div></div>' +
+      '<form class="form" id="form" novalidate>' +
+        (fromDraft && fromDraft.scanned
+          ? '<div class="banner">' + ICON.check + "<p><b>Here’s what was read from the sheet.</b> Check the words and chords against the paper, fix anything that’s wrong, then tap Save song." +
+            (fromDraft.ocr ? " Handwriting and chords often come out wrong, so look closely." : "") + "</p></div>"
+          : "") +
+        '<div class="field"><label for="f-title">Song title</label><input id="f-title" required autocapitalize="words" value="' + esc(s.title) + '"></div>' +
+        '<div class="field"><label for="f-artist">Who sings it <span class="hint">(optional)</span></label><input id="f-artist" autocapitalize="words" value="' + esc(s.artist) + '"></div>' +
+        '<div class="field"><span class="label" id="capo-lbl">Capo fret</span>' +
+          '<div class="stepper" role="group" aria-labelledby="capo-lbl">' +
+            '<button class="sq" id="capo-down" type="button" aria-label="Capo lower">−</button>' +
+            '<output id="f-capo" aria-live="polite"></output>' +
+            '<button class="sq" id="capo-up" type="button" aria-label="Capo higher">+</button></div></div>' +
+        '<div class="field"><label for="f-chord">Starting chord</label>' +
+          '<div class="chips" id="chips">' + chips + "</div>" +
+          '<input id="f-chord" autocapitalize="characters" autocomplete="off" placeholder="Tap one above or type it, like C or F#m" value="' + esc(s.chord) + '"></div>' +
+        '<div class="showas"><span class="hint">Shows at the top of the song as</span><span class="preview" id="f-preview"></span></div>' +
+        '<div class="field"><label for="f-lyrics">Words and chords</label>' +
+          '<span class="hint">Put chords on their own line above the words. Lines like [Chorus] become small headings.</span>' +
+          '<textarea id="f-lyrics" spellcheck="false">' + esc(s.lyrics) + "</textarea></div>" +
+        '<p class="error" id="f-error" role="alert" hidden></p>' +
+        (isNew ? "" :
+          '<div class="danger-zone"><button class="btn danger" id="del" type="button">Delete this song</button>' +
+          '<div class="confirm" id="confirm" hidden><p>Delete “' + esc(s.title) + '” for good?</p>' +
+          '<div class="form-actions"><button class="btn danger" id="del-yes" type="button">Yes, delete it</button>' +
+          '<button class="btn" id="del-no" type="button">Keep it</button></div></div></div>') +
+        '<div class="savebar"><button class="btn primary big" type="submit">' + ICON.check + "Save song</button></div>" +
+      "</form>";
+
+    var capoVal = Number(s.capo) || 0;
+    var capoOut = document.getElementById("f-capo"), chord = document.getElementById("f-chord");
+    function current() {
+      return [document.getElementById("f-title").value.trim(), document.getElementById("f-artist").value.trim(),
+        capoVal, chord.value.trim(), document.getElementById("f-lyrics").value.replace(/\s+$/, "")];
+    }
+    function sync() {
+      capoOut.textContent = capoVal === 0 ? "No capo" : capoVal;
+      document.getElementById("capo-down").disabled = capoVal <= 0;
+      document.getElementById("capo-up").disabled = capoVal >= 12;
+      document.getElementById("f-preview").textContent = capoLabel({ capo: capoVal, chord: chord.value.trim() || "?" });
+      app.querySelectorAll(".chip").forEach(function (c) { c.classList.toggle("on", c.getAttribute("data-chord") === chord.value.trim()); });
+    }
+    document.getElementById("capo-down").addEventListener("click", function () { capoVal = Math.max(0, capoVal - 1); sync(); });
+    document.getElementById("capo-up").addEventListener("click", function () { capoVal = Math.min(12, capoVal + 1); sync(); });
+    document.getElementById("chips").addEventListener("click", function (e) {
+      var c = e.target.closest(".chip"); if (!c) return;
+      chord.value = c.getAttribute("data-chord"); sync();
+    });
+    chord.addEventListener("input", sync);
+    sync();
+
+    var leave = document.getElementById("leave");
+    document.getElementById("cancel").addEventListener("click", function () {
+      var changed = JSON.stringify(current()) !== start || (fromDraft && fromDraft.scanned);
+      if (!changed) return goBack();
+      leave.hidden = false; window.scrollTo(0, 0);
+    });
+    document.getElementById("leave-yes").addEventListener("click", function () { draft = null; goBack(); });
+    document.getElementById("leave-no").addEventListener("click", function () { leave.hidden = true; });
+
+    document.getElementById("form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var v = current(), err = document.getElementById("f-error");
+      if (!v[0]) {
+        err.textContent = "Give the song a title so you can find it later."; err.hidden = false;
+        document.getElementById("f-title").focus(); return;
+      }
+      var data = { title: v[0], artist: v[1], capo: v[2], chord: v[3], lyrics: v[4] };
+      var id;
+      if (isNew) {
+        id = "u-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        data.id = id; songs.push(data);
+      } else {
+        id = view.id;
+        var existing = findSong(id);
+        for (var k in data) existing[k] = data[k];
+        delete existing.sample;
+      }
+      save(KEY, songs);
+      draft = null;
+      toast(isNew ? "Song added" : "Song saved");
+      if (isNew) go({ name: "song", id: id }, true);
+      else history.back();  // return to the song page it was opened from
+    });
+    if (!isNew) {
+      var box = document.getElementById("confirm"), del = document.getElementById("del");
+      del.addEventListener("click", function () { box.hidden = false; del.hidden = true; box.scrollIntoView({ block: "center" }); });
+      document.getElementById("del-no").addEventListener("click", function () { box.hidden = true; del.hidden = false; });
+      document.getElementById("del-yes").addEventListener("click", function () {
+        songs = songs.filter(function (x) { return x.id !== view.id; });
+        delete prefs.speeds[view.id]; save(PREFS, prefs);
+        save(KEY, songs);
+        toast("Song deleted");
+        go({ name: "list" }, true);
+      });
+    }
+  }
+
+  // ---------- Start ----------
+  try { history.replaceState(view, ""); } catch (e) {}
+  render();
+
+  // Offline support when hosted as an installed app (not available inside every viewer, so failures are ignored)
+  try {
+    if ("serviceWorker" in navigator && location.protocol === "https:") {
+      navigator.serviceWorker.register("sw.js").catch(function () {});
+    }
+  } catch (e) {}
+})();
+</script>
