@@ -5,6 +5,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="theme-color" content="#0a6b55">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Dave's Tunes">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -282,6 +283,8 @@ button { cursor: pointer; }
 .tag.check { color: #8a4b00; border-color: #e0a54a; background: #fff3dd; }
 :root[data-theme="dark"] .tag.check { color: #ffcf8a; border-color: #8a5a1a; background: #2c2010; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tag.check { color: #ffcf8a; border-color: #8a5a1a; background: #2c2010; } }
+.banner.install { display: grid; background: var(--surface); border: 2px solid var(--accent); margin-top: 12px; }
+.banner .share-ico svg { width: 22px; height: 22px; vertical-align: -4px; color: var(--accent); }
 .banner.warn { display: grid; background: var(--surface); border: 2px solid #e0a54a; }
 .banner.warn .btn { white-space: nowrap; padding: 0 14px; }
 .count-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 12px 0 8px; }
@@ -632,6 +635,7 @@ button { cursor: pointer; }
     fwd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
     rotate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg>',
     grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M4 3h16" stroke-width="3"/><path d="M4 3v18M9.3 3v18M14.7 3v18M20 3v18M4 9h16M4 15h16" stroke-width="1.4"/><circle cx="9.3" cy="12" r="2.3" fill="currentColor" stroke="none"/><circle cx="14.7" cy="18" r="2.3" fill="currentColor" stroke="none"/></svg>',
+    share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7.5 7.5L12 3l4.5 4.5"/><path d="M8 11H6v10h12V11h-2"/></svg>',
     edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>'
   };
 
@@ -918,6 +922,42 @@ button { cursor: pointer; }
     renderList();
   }
 
+  // ---------- Install ----------
+  // In a browser tab, offer to install the app so it opens full screen with no address bar.
+  // Android/Chrome hands us a ready-made install prompt; iPhone/iPad needs the Share menu.
+  var installEvt = null;
+  window.addEventListener("beforeinstallprompt", function (e) {
+    e.preventDefault(); installEvt = e;
+    if (view.name === "list") renderList();
+  });
+  window.addEventListener("appinstalled", function () { installEvt = null; if (view.name === "list") renderList(); });
+  function isInstalled() {
+    try {
+      if (navigator.standalone) return true;
+      return ["fullscreen", "standalone", "minimal-ui"].some(function (m) { return matchMedia("(display-mode: " + m + ")").matches; });
+    } catch (e) { return false; }
+  }
+  function isApple() { return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); }
+  function installBanner() {
+    if (isInstalled() || prefs.noInstall || location.protocol !== "https:") return "";
+    if (installEvt) return '<div class="banner install"><p><b>Install Dave\u2019s Tunes</b> so it opens full screen, like an app.</p>' +
+      '<div class="form-actions"><button class="btn primary" id="install-yes" type="button">Install</button>' +
+      '<button class="btn" id="install-no" type="button">Not now</button></div></div>';
+    if (isApple()) return '<div class="banner install"><p><b>To open it full screen:</b> tap the Share button ' +
+      '<span class="share-ico" aria-hidden="true">' + ICON.share + "</span> at the bottom (or top) of the screen, then <b>Add to Home Screen</b>. Open it from the new icon.</p>" +
+      '<div class="form-actions"><button class="btn" id="install-no" type="button">Got it</button></div></div>';
+    return "";
+  }
+  function wireInstall() {
+    var yes = document.getElementById("install-yes"), no = document.getElementById("install-no");
+    if (yes) yes.addEventListener("click", function () {
+      var e = installEvt; installEvt = null;
+      e.prompt();
+      e.userChoice.then(function () { renderList(); }, function () { renderList(); });
+    });
+    if (no) no.addEventListener("click", function () { prefs.noInstall = true; save(PREFS, prefs); renderList(); });
+  }
+
   // ---------- List ----------
   function renderList() {
     document.title = "Dave's Tunes";
@@ -925,6 +965,7 @@ button { cursor: pointer; }
       '<header class="topbar"><h1 class="logo"><img src="icon.svg" alt="Dave’s Tunes" width="60" height="60"></h1>' +
       '<button class="btn ghost icon" id="chord-book" type="button" aria-label="All chord charts" title="All chord charts">' + ICON.grid + "</button>" +
       '<button class="btn ghost" id="theme" type="button" aria-label="Change light or dark look"></button></header>' +
+      installBanner() +
       '<div class="tabs" role="tablist">' +
         '<button class="tab' + (listTab === "songs" ? " on" : "") + '" id="tab-songs" type="button" role="tab" aria-selected="' + (listTab === "songs") + '">Songs</button>' +
         '<button class="tab' + (listTab === "lists" ? " on" : "") + '" id="tab-lists" type="button" role="tab" aria-selected="' + (listTab === "lists") + '">Playlists</button></div>' +
@@ -939,6 +980,7 @@ button { cursor: pointer; }
     document.getElementById("tab-songs").addEventListener("click", function () { setTab("songs"); });
     document.getElementById("tab-lists").addEventListener("click", function () { setTab("lists"); });
     document.getElementById("chord-book").addEventListener("click", openChordBook);
+    wireInstall();
     var tb = document.getElementById("theme");
     function showTheme() { tb.innerHTML = THEME_LABEL[prefs.theme || "auto"]; }
     tb.addEventListener("click", function () {
