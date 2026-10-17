@@ -311,6 +311,7 @@ button { cursor: pointer; }
 .song-actions .btn { flex: 1 1 150px; padding: 0 12px; gap: 6px; white-space: nowrap; }
 .song-actions + .tip { margin-top: 10px; }
 .chart-row { justify-content: space-around; }
+.book-keys .chip { min-width: 58px; }
 .charts .tip { margin: 0 0 8px; }
 .chart-row { display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .chart { margin: 0; width: 130px; text-align: center; }
@@ -717,7 +718,10 @@ button { cursor: pointer; }
     "":   [[0, 2, 2, 1, 0, 0], "1,3,4,2,1,1", [null, 0, 2, 2, 2, 0], "0,1,2,3,4,1"],
     "m":  [[0, 2, 2, 0, 0, 0], "1,3,4,1,1,1", [null, 0, 2, 2, 1, 0], "0,1,3,4,2,1"],
     "7":  [[0, 2, 0, 1, 0, 0], "1,3,1,2,1,1", [null, 0, 2, 0, 2, 0], "0,1,3,1,4,1"],
-    "m7": [[0, 2, 0, 0, 0, 0], "1,3,1,1,1,1", [null, 0, 2, 0, 1, 0], "0,1,3,1,2,1"]
+    "m7": [[0, 2, 0, 0, 0, 0], "1,3,1,1,1,1", [null, 0, 2, 0, 1, 0], "0,1,3,1,2,1"],
+    "maj7": [[0, null, 1, 1, 0, null], "1,0,3,4,2,0", [null, 0, 2, 1, 2, 0], "0,1,3,2,4,1"],
+    "sus4": [[0, 2, 2, 2, 0, 0], "1,2,3,4,1,1", [null, 0, 2, 2, 3, 0], "0,1,2,3,4,1"],
+    "sus2": [null, null, [null, 0, 2, 2, 0, 0], "0,1,3,4,1,1"]
   };
   function chordShape(name) {
     var bare = String(name).replace(/[()]/g, "").split("/")[0];
@@ -735,7 +739,7 @@ button { cursor: pointer; }
     if (!mv) return null;
     var n = NOTES.indexOf(root), onE = (n - 4 + 12) % 12, onA = (n - 9 + 12) % 12;
     if (!onE) onE = 12; if (!onA) onA = 12;
-    var useA = onA < onE, base = useA ? onA : onE, off = useA ? mv[2] : mv[0];
+    var useA = !mv[0] || onA < onE, base = useA ? onA : onE, off = useA ? mv[2] : mv[0];
     return [off.map(function (o) { return o == null ? "x" : o + base; }).join(","), useA ? mv[3] : mv[1]];
   }
   // A chord box drawn as an SVG: strings up and down, frets across, a numbered dot for each finger.
@@ -746,11 +750,11 @@ button { cursor: pointer; }
     var played = fr.filter(function (f) { return f !== "x" && f !== "0"; }).map(Number);
     var hi = played.length ? Math.max.apply(null, played) : 0, lo = played.length ? Math.min.apply(null, played) : 1;
     var base = hi > 4 ? lo : 1, rows = Math.max(4, hi - base + 1);
-    var L = 30, T = 30, SX = 20, SY = 24, W = L + SX * 5 + 16, H = T + SY * rows + 8;
+    var L = 38, T = 30, SX = 20, SY = 24, W = L + SX * 5 + 16, H = T + SY * rows + 8;
     var o = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + esc(name) + ' chord chart">';
     for (var s = 0; s < 6; s++) o += '<line class="str" x1="' + (L + s * SX) + '" y1="' + T + '" x2="' + (L + s * SX) + '" y2="' + (T + rows * SY) + '"/>';
     for (var r = 0; r <= rows; r++) o += '<line class="' + (r === 0 && base === 1 ? "nut" : "fret") + '" x1="' + L + '" y1="' + (T + r * SY) + '" x2="' + (L + 5 * SX) + '" y2="' + (T + r * SY) + '"/>';
-    if (base > 1) o += '<text class="base" x="' + (L - 8) + '" y="' + (T + SY / 2 + 5) + '" text-anchor="end">' + base + "</text>";
+    if (base > 1) o += '<text class="base" x="' + (L - 13) + '" y="' + (T + SY / 2 + 5) + '" text-anchor="end">' + base + "</text>";
     // One finger lying across several strings at the same fret is a barre.
     var bar = {};
     for (s = 0; s < 6; s++) if (fi[s] !== "0" && fr[s] !== "x" && fr[s] !== "0") {
@@ -783,10 +787,32 @@ button { cursor: pointer; }
     });
     return out;
   }
+  // The chord book: every chord, one key at a time so the list stays short enough to read.
+  var BOOK_ROOTS = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
+  var BOOK_KINDS = ["", "m", "7", "m7", "maj7", "sus2", "sus4", "6", "add9", "dim", "aug"];
+  var CHART_KEY = '<p class="tip">Numbers are fingers: 1 pointer, 2 middle, 3 ring, 4 little. × means don’t play that string, ○ means play it open.</p>';
+  function openChordBook() {
+    stopScroll();
+    var root = BOOK_ROOTS.indexOf(prefs.bookRoot) >= 0 ? prefs.bookRoot : "C";
+    function body() {
+      return '<p class="sheet-title">Chord charts</p>' +
+        '<div class="chips book-keys">' + BOOK_ROOTS.map(function (r) {
+          return '<button class="chip' + (r === root ? " on" : "") + '" type="button" data-root="' + r + '">' + r + "</button>";
+        }).join("") + "</div>" + CHART_KEY +
+        '<div class="chart-row">' + BOOK_KINDS.map(function (k) { return root + k; })
+          .filter(function (c) { return chordShape(c); }).map(chordSvg).join("") + "</div>" +
+        '<button class="btn" type="button" data-close>Close</button>';
+    }
+    var back = openSheet(body(), function (e) {
+      var b = e.target.closest("[data-root]"); if (!b) return;
+      root = b.getAttribute("data-root"); prefs.bookRoot = root; save(PREFS, prefs);
+      back.querySelector(".sheet").innerHTML = body();
+    });
+  }
   function chartsHtml(s) {
     var cs = songChords(s);
     if (!cs.length) return "";
-    return '<div class="charts"><p class="tip">Numbers are fingers: 1 pointer, 2 middle, 3 ring, 4 little. × means don’t play that string, ○ means play it open.</p>' +
+    return '<div class="charts">' + CHART_KEY +
       '<div class="chart-row">' + cs.map(chordSvg).join("") + "</div></div>";
   }
 
@@ -895,6 +921,7 @@ button { cursor: pointer; }
     document.title = "Dave's Tunes";
     app.innerHTML =
       '<header class="topbar"><h1>Dave’s Tunes</h1>' +
+      '<button class="btn ghost icon" id="chord-book" type="button" aria-label="All chord charts" title="All chord charts">' + ICON.grid + "</button>" +
       '<button class="btn ghost" id="theme" type="button" aria-label="Change light or dark look"></button></header>' +
       '<div class="tabs" role="tablist">' +
         '<button class="tab' + (listTab === "songs" ? " on" : "") + '" id="tab-songs" type="button" role="tab" aria-selected="' + (listTab === "songs") + '">Songs</button>' +
@@ -909,6 +936,7 @@ button { cursor: pointer; }
           '<button class="btn primary fab" id="new-pl" type="button">' + ICON.plus + 'New playlist</button>');
     document.getElementById("tab-songs").addEventListener("click", function () { setTab("songs"); });
     document.getElementById("tab-lists").addEventListener("click", function () { setTab("lists"); });
+    document.getElementById("chord-book").addEventListener("click", openChordBook);
     var tb = document.getElementById("theme");
     function showTheme() { tb.innerHTML = THEME_LABEL[prefs.theme || "auto"]; }
     tb.addEventListener("click", function () {
