@@ -88,6 +88,7 @@ button { cursor: pointer; }
 }
 .topbar h1.logo { display: flex; }
 .topbar h1.logo img { width: 60px; height: 60px; display: block; }
+.topbar .bar-gap { flex: 1; }
 .topbar .small-title {
   font-family: var(--font-display); font-weight: 600; font-size: 22px; margin: 0;
   flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -1109,7 +1110,7 @@ button { cursor: pointer; }
     document.title = s.title + " · Dave's Tunes";
     app.innerHTML =
       '<header class="topbar"><button class="btn ghost" id="back" type="button" aria-label="Back to songs">' + ICON.back + "Songs</button>" +
-      '<p class="small-title">' + esc(s.title) + "</p>" +
+      '<span class="bar-gap"></span>' +
       (songChords(s).length ? '<button class="btn ghost icon" id="show-charts" type="button" aria-label="Chord charts" title="Chord charts">' + ICON.grid + "</button>" : "") +
       '<button class="btn ghost" id="edit" type="button">' + ICON.edit + "Edit</button></header>" +
       '<section class="song-head"><div class="names"><h2>' + esc(s.title) + "</h2>" +
