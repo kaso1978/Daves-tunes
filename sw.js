@@ -1,5 +1,5 @@
 // Keeps Dave's Tunes working with no signal: the app files are cached on first visit.
-const CACHE = "daves-tunes-v10";
+const CACHE = "daves-tunes-v11";
 const SHELL = ["./", "index.html", "manifest.json", "icon.svg"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener("activate", e => {

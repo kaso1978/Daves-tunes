@@ -70,6 +70,8 @@ button { cursor: pointer; }
 .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .btn.danger { color: var(--danger); border-color: currentColor; background: transparent; }
 .btn.ghost { min-height: 52px; padding: 0 14px; }
+.btn.icon { width: 56px; padding: 0; }
+.btn.icon svg { width: 30px; height: 30px; }
 .topbar .btn { flex: none; }
 .btn svg { width: 24px; height: 24px; flex: none; }
 
@@ -308,7 +310,7 @@ button { cursor: pointer; }
 .song-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .song-actions .btn { flex: 1 1 150px; padding: 0 12px; gap: 6px; white-space: nowrap; }
 .song-actions + .tip { margin-top: 10px; }
-.charts { margin-top: 12px; background: var(--surface); border: 2px solid var(--edge); border-radius: 14px; padding: 12px; }
+.chart-row { justify-content: space-around; }
 .charts .tip { margin: 0 0 8px; }
 .chart-row { display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .chart { margin: 0; width: 130px; text-align: center; }
@@ -626,7 +628,7 @@ button { cursor: pointer; }
     list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg>',
     fwd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
     rotate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg>',
-    grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 3v18M10 3v18M14 3v18M18 3v18M6 4h12M6 9h12M6 14h12"/><circle cx="10" cy="11.5" r="1.6" fill="currentColor"/><circle cx="14" cy="16.5" r="1.6" fill="currentColor"/></svg>',
+    grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M4 3h16" stroke-width="3"/><path d="M4 3v18M9.3 3v18M14.7 3v18M20 3v18M4 9h16M4 15h16" stroke-width="1.4"/><circle cx="9.3" cy="12" r="2.3" fill="currentColor" stroke="none"/><circle cx="14.7" cy="18" r="2.3" fill="currentColor" stroke="none"/></svg>',
     edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>'
   };
 
@@ -784,7 +786,7 @@ button { cursor: pointer; }
   function chartsHtml(s) {
     var cs = songChords(s);
     if (!cs.length) return "";
-    return '<div class="charts" id="charts"' + (prefs.charts ? "" : " hidden") + '><p class="tip">Numbers are fingers: 1 pointer, 2 middle, 3 ring, 4 little. × means don’t play that string, ○ means play it open.</p>' +
+    return '<div class="charts"><p class="tip">Numbers are fingers: 1 pointer, 2 middle, 3 ring, 4 little. × means don’t play that string, ○ means play it open.</p>' +
       '<div class="chart-row">' + cs.map(chordSvg).join("") + "</div></div>";
   }
 
@@ -988,6 +990,7 @@ button { cursor: pointer; }
     app.innerHTML =
       '<header class="topbar"><button class="btn ghost" id="back" type="button" aria-label="Back to songs">' + ICON.back + "Songs</button>" +
       '<p class="small-title">' + esc(s.title) + "</p>" +
+      (songChords(s).length ? '<button class="btn ghost icon" id="show-charts" type="button" aria-label="Chord charts" title="Chord charts">' + ICON.grid + "</button>" : "") +
       '<button class="btn ghost" id="edit" type="button">' + ICON.edit + "Edit</button></header>" +
       '<section class="song-head"><div class="names"><h2>' + esc(s.title) + "</h2>" +
       (s.artist ? '<div class="artist">' + esc(s.artist) + "</div>" : "") +
@@ -998,9 +1001,7 @@ button { cursor: pointer; }
         (String(s.lyrics || "").trim() ? '<button class="btn" id="mark-checked" type="button">' + ICON.check + "It\u2019s correct</button>" : "") + "</div></div>" : "") +
       partsBar(s) +
       '<div class="song-actions"><button class="btn" id="arrange" type="button">' + ICON.list + "Arrange</button>" +
-      '<button class="btn" id="to-pl" type="button">' + ICON.plus + "Add to playlist</button>" +
-      (songChords(s).length ? '<button class="btn" id="show-charts" type="button" aria-expanded="' + !!prefs.charts + '">' + ICON.grid + (prefs.charts ? "Hide chord charts" : "Chord charts") + "</button>" : "") + "</div>" +
-      chartsHtml(s) +
+      '<button class="btn" id="to-pl" type="button">' + ICON.plus + "Add to playlist</button></div>" +
       '<p class="tip">Tap the words to start or stop scrolling. Press and hold a word to put a chord over it.</p>' +
       '<div class="lyrics" id="lyrics">' + songLyricsHtml(s) + "</div>" +
       '<div class="end-space"><p>End of song</p>' +
@@ -1025,10 +1026,9 @@ button { cursor: pointer; }
     document.getElementById("arrange").addEventListener("click", function () { go({ name: "arrange", id: s.id }); });
     var sc = document.getElementById("show-charts");
     if (sc) sc.addEventListener("click", function () {
-      prefs.charts = !prefs.charts; save(PREFS, prefs);
-      document.getElementById("charts").hidden = !prefs.charts;
-      sc.setAttribute("aria-expanded", prefs.charts);
-      sc.innerHTML = ICON.grid + (prefs.charts ? "Hide chord charts" : "Chord charts");
+      stopScroll();
+      openSheet('<p class="sheet-title">Chords in <q>' + esc(s.title) + "</q></p>" + chartsHtml(s) +
+        '<button class="btn" type="button" data-close>Close</button>', function () {});
     });
     // A song kept as a photo only (no words typed yet) shows the sheet itself, so it can still be played.
     if (!String(s.lyrics || "").trim()) {
