@@ -308,6 +308,20 @@ button { cursor: pointer; }
 .song-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .song-actions .btn { flex: 1 1 150px; padding: 0 12px; gap: 6px; white-space: nowrap; }
 .song-actions + .tip { margin-top: 10px; }
+.charts { margin-top: 12px; background: var(--surface); border: 2px solid var(--edge); border-radius: 14px; padding: 12px; }
+.charts .tip { margin: 0 0 8px; }
+.chart-row { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.chart { margin: 0; width: 130px; text-align: center; }
+.chart figcaption { font-family: var(--font-lyrics); font-weight: 700; font-size: 24px; color: var(--accent); }
+.chart svg { width: 130px; height: auto; display: block; }
+.chart .str, .chart .fret { stroke: var(--muted); stroke-width: 1.5; }
+.chart .nut { stroke: var(--ink); stroke-width: 5; }
+.chart .dot { fill: var(--ink); }
+.chart .fing { fill: var(--bg); font: 700 14px system-ui, sans-serif; }
+.chart .open { fill: none; stroke: var(--ink); stroke-width: 2; }
+.chart .mute { fill: var(--ink); font: 700 18px system-ui, sans-serif; }
+.chart .base { fill: var(--ink); font: 700 14px system-ui, sans-serif; }
+.chart.none p { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
 .lyrics .part + .part { margin-top: 1em; }
 .end-space { flex-direction: column; align-items: stretch; gap: 16px; text-align: center; }
 .end-space p { margin: 0; }
@@ -612,6 +626,7 @@ button { cursor: pointer; }
     list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg>',
     fwd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
     rotate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg>',
+    grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 3v18M10 3v18M14 3v18M18 3v18M6 4h12M6 9h12M6 14h12"/><circle cx="10" cy="11.5" r="1.6" fill="currentColor"/><circle cx="14" cy="16.5" r="1.6" fill="currentColor"/></svg>',
     edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>'
   };
 
@@ -672,6 +687,105 @@ button { cursor: pointer; }
       html += '<div class="' + cls + '">' + (esc(shown) || "&nbsp;") + "</div>";
     }
     return html;
+  }
+
+  // ---------- Chord charts ----------
+  // Shapes are written low E to high E: frets ("x" = don't play, "0" = open) and the finger on each
+  // string (1 index, 2 middle, 3 ring, 4 little). Chords not listed get a movable barre shape.
+  var SHAPES = {
+    "C": ["x,3,2,0,1,0", "0,3,2,0,1,0"], "D": ["x,x,0,2,3,2", "0,0,0,1,3,2"], "E": ["0,2,2,1,0,0", "0,2,3,1,0,0"],
+    "F": ["1,3,3,2,1,1", "1,3,4,2,1,1"], "G": ["3,2,0,0,0,3", "2,1,0,0,0,3"], "A": ["x,0,2,2,2,0", "0,0,1,2,3,0"],
+    "B": ["x,2,4,4,4,2", "0,1,2,3,4,1"], "Am": ["x,0,2,2,1,0", "0,0,2,3,1,0"], "Bm": ["x,2,4,4,3,2", "0,1,3,4,2,1"],
+    "Dm": ["x,x,0,2,3,1", "0,0,0,2,3,1"], "Em": ["0,2,2,0,0,0", "0,2,3,0,0,0"], "C7": ["x,3,2,3,1,0", "0,3,2,4,1,0"],
+    "D7": ["x,x,0,2,1,2", "0,0,0,2,1,3"], "E7": ["0,2,0,1,0,0", "0,2,0,1,0,0"], "G7": ["3,2,0,0,0,1", "3,2,0,0,0,1"],
+    "A7": ["x,0,2,0,2,0", "0,0,2,0,3,0"], "B7": ["x,2,1,2,0,2", "0,2,1,3,0,4"], "Am7": ["x,0,2,0,1,0", "0,0,2,0,1,0"],
+    "Em7": ["0,2,2,0,3,0", "0,1,2,0,4,0"], "Dm7": ["x,x,0,2,1,1", "0,0,0,2,1,1"], "Cmaj7": ["x,3,2,0,0,0", "0,3,2,0,0,0"],
+    "Fmaj7": ["x,x,3,2,1,0", "0,0,3,2,1,0"], "Gmaj7": ["3,2,0,0,0,2", "3,2,0,0,0,1"], "Dmaj7": ["x,x,0,2,2,2", "0,0,0,1,1,1"],
+    "Amaj7": ["x,0,2,1,2,0", "0,0,2,1,3,0"], "Dsus4": ["x,x,0,2,3,3", "0,0,0,1,3,4"], "Dsus2": ["x,x,0,2,3,0", "0,0,0,1,3,0"],
+    "Asus4": ["x,0,2,2,3,0", "0,0,1,2,4,0"], "Asus2": ["x,0,2,2,0,0", "0,0,1,2,0,0"], "Esus4": ["0,2,2,2,0,0", "0,2,3,4,0,0"],
+    "Csus4": ["x,3,3,0,1,1", "0,3,4,0,1,1"], "Gsus4": ["3,3,0,0,1,3", "2,3,0,0,1,4"], "C6": ["x,3,2,2,1,0", "0,4,2,3,1,0"],
+    "D6": ["x,x,0,2,0,2", "0,0,0,1,0,2"], "G6": ["3,2,0,0,0,0", "2,1,0,0,0,0"], "Cadd9": ["x,3,2,0,3,0", "0,2,1,0,3,0"],
+    "Fm": ["1,3,3,1,1,1", "1,3,4,1,1,1"], "F7": ["1,3,1,2,1,1", "1,3,1,2,1,1"], "Bb": ["x,1,3,3,3,1", "0,1,2,3,4,1"],
+    "Cdim": ["x,3,4,2,4,x", "0,2,3,1,4,0"], "Ddim": ["x,x,0,1,3,1", "0,0,0,1,3,2"], "Caug": ["x,3,2,1,1,0", "0,4,3,1,2,0"]
+  };
+  var NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  var FLAT = { Db: "C#", Eb: "D#", Gb: "F#", Ab: "G#", Bb: "A#", Cb: "B", Fb: "E" };
+  // Movable barre shapes, root on the low E string or the A string (offsets from the root fret).
+  var MOVE = {
+    "":   [[0, 2, 2, 1, 0, 0], "1,3,4,2,1,1", [null, 0, 2, 2, 2, 0], "0,1,2,3,4,1"],
+    "m":  [[0, 2, 2, 0, 0, 0], "1,3,4,1,1,1", [null, 0, 2, 2, 1, 0], "0,1,3,4,2,1"],
+    "7":  [[0, 2, 0, 1, 0, 0], "1,3,1,2,1,1", [null, 0, 2, 0, 2, 0], "0,1,3,1,4,1"],
+    "m7": [[0, 2, 0, 0, 0, 0], "1,3,1,1,1,1", [null, 0, 2, 0, 1, 0], "0,1,3,1,2,1"]
+  };
+  function chordShape(name) {
+    var bare = String(name).replace(/[()]/g, "").split("/")[0];
+    if (SHAPES[bare]) return SHAPES[bare];
+    var m = bare.match(/^([A-G])(#|b)?(.*)$/);
+    if (!m) return null;
+    var root = m[1] + (m[2] || ""), qual = m[3] === "min" ? "m" : m[3] === "M" ? "" : m[3];
+    root = FLAT[root] || root;
+    // Same chord spelled another way (Gb = F#) may be in the list already.
+    for (var k in SHAPES) {
+      var km = k.match(/^([A-G])(#|b)?(.*)$/), kr = km[1] + (km[2] || "");
+      if ((FLAT[kr] || kr) === root && km[3] === qual) return SHAPES[k];
+    }
+    var mv = MOVE[qual];
+    if (!mv) return null;
+    var n = NOTES.indexOf(root), onE = (n - 4 + 12) % 12, onA = (n - 9 + 12) % 12;
+    if (!onE) onE = 12; if (!onA) onA = 12;
+    var useA = onA < onE, base = useA ? onA : onE, off = useA ? mv[2] : mv[0];
+    return [off.map(function (o) { return o == null ? "x" : o + base; }).join(","), useA ? mv[3] : mv[1]];
+  }
+  // A chord box drawn as an SVG: strings up and down, frets across, a numbered dot for each finger.
+  function chordSvg(name) {
+    var sh = chordShape(name);
+    if (!sh) return '<figure class="chart none"><figcaption>' + esc(name) + "</figcaption><p>No chart for this one yet</p></figure>";
+    var fr = sh[0].split(","), fi = sh[1].split(",");
+    var played = fr.filter(function (f) { return f !== "x" && f !== "0"; }).map(Number);
+    var hi = played.length ? Math.max.apply(null, played) : 0, lo = played.length ? Math.min.apply(null, played) : 1;
+    var base = hi > 4 ? lo : 1, rows = Math.max(4, hi - base + 1);
+    var L = 30, T = 30, SX = 20, SY = 24, W = L + SX * 5 + 16, H = T + SY * rows + 8;
+    var o = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + esc(name) + ' chord chart">';
+    for (var s = 0; s < 6; s++) o += '<line class="str" x1="' + (L + s * SX) + '" y1="' + T + '" x2="' + (L + s * SX) + '" y2="' + (T + rows * SY) + '"/>';
+    for (var r = 0; r <= rows; r++) o += '<line class="' + (r === 0 && base === 1 ? "nut" : "fret") + '" x1="' + L + '" y1="' + (T + r * SY) + '" x2="' + (L + 5 * SX) + '" y2="' + (T + r * SY) + '"/>';
+    if (base > 1) o += '<text class="base" x="' + (L - 8) + '" y="' + (T + SY / 2 + 5) + '" text-anchor="end">' + base + "</text>";
+    // One finger lying across several strings at the same fret is a barre.
+    var bar = {};
+    for (s = 0; s < 6; s++) if (fi[s] !== "0" && fr[s] !== "x" && fr[s] !== "0") {
+      var key = fi[s] + "@" + fr[s];
+      (bar[key] = bar[key] || []).push(s);
+    }
+    for (var k in bar) if (bar[k].length > 1) {
+      var ss = bar[k], y = T + (Number(k.split("@")[1]) - base + 0.5) * SY;
+      o += '<rect class="dot" x="' + (L + ss[0] * SX - 9) + '" y="' + (y - 9) + '" width="' + ((ss[ss.length - 1] - ss[0]) * SX + 18) + '" height="18" rx="9"/>';
+    }
+    for (s = 0; s < 6; s++) {
+      var x = L + s * SX;
+      if (fr[s] === "x") o += '<text class="mute" x="' + x + '" y="' + (T - 9) + '" text-anchor="middle">×</text>';
+      else if (fr[s] === "0") o += '<circle class="open" cx="' + x + '" cy="' + (T - 14) + '" r="6"/>';
+      else {
+        var cy = T + (Number(fr[s]) - base + 0.5) * SY;
+        o += '<circle class="dot" cx="' + x + '" cy="' + cy + '" r="9.5"/>' +
+          (fi[s] !== "0" ? '<text class="fing" x="' + x + '" y="' + (cy + 5) + '" text-anchor="middle">' + fi[s] + "</text>" : "");
+      }
+    }
+    return '<figure class="chart"><figcaption>' + esc(name) + "</figcaption>" + o + "</svg></figure>";
+  }
+  // Every chord in the song, in the order it first appears (the starting chord first).
+  function songChords(s) {
+    var seen = {}, out = [];
+    function add(c) { c = String(c || "").replace(/[()]/g, ""); if (c && CHORD.test(c) && !seen[c]) { seen[c] = 1; out.push(c); } }
+    add(s.chord);
+    String(s.lyrics || "").replace(/\r/g, "").split("\n").forEach(function (l) {
+      if (lineClass(l) === "ln chord") chordMarks(l).forEach(function (m) { add(m.c); });
+    });
+    return out;
+  }
+  function chartsHtml(s) {
+    var cs = songChords(s);
+    if (!cs.length) return "";
+    return '<div class="charts" id="charts"' + (prefs.charts ? "" : " hidden") + '><p class="tip">Numbers are fingers: 1 pointer, 2 middle, 3 ring, 4 little. × means don’t play that string, ○ means play it open.</p>' +
+      '<div class="chart-row">' + cs.map(chordSvg).join("") + "</div></div>";
   }
 
   // ---------- Parts of a song (verse, chorus, bridge) ----------
@@ -884,7 +998,9 @@ button { cursor: pointer; }
         (String(s.lyrics || "").trim() ? '<button class="btn" id="mark-checked" type="button">' + ICON.check + "It\u2019s correct</button>" : "") + "</div></div>" : "") +
       partsBar(s) +
       '<div class="song-actions"><button class="btn" id="arrange" type="button">' + ICON.list + "Arrange</button>" +
-      '<button class="btn" id="to-pl" type="button">' + ICON.plus + "Add to playlist</button></div>" +
+      '<button class="btn" id="to-pl" type="button">' + ICON.plus + "Add to playlist</button>" +
+      (songChords(s).length ? '<button class="btn" id="show-charts" type="button" aria-expanded="' + !!prefs.charts + '">' + ICON.grid + (prefs.charts ? "Hide chord charts" : "Chord charts") + "</button>" : "") + "</div>" +
+      chartsHtml(s) +
       '<p class="tip">Tap the words to start or stop scrolling. Press and hold a word to put a chord over it.</p>' +
       '<div class="lyrics" id="lyrics">' + songLyricsHtml(s) + "</div>" +
       '<div class="end-space"><p>End of song</p>' +
@@ -907,6 +1023,13 @@ button { cursor: pointer; }
     document.getElementById("back").addEventListener("click", goBack);
     document.getElementById("edit").addEventListener("click", function () { go({ name: "edit", id: s.id }); });
     document.getElementById("arrange").addEventListener("click", function () { go({ name: "arrange", id: s.id }); });
+    var sc = document.getElementById("show-charts");
+    if (sc) sc.addEventListener("click", function () {
+      prefs.charts = !prefs.charts; save(PREFS, prefs);
+      document.getElementById("charts").hidden = !prefs.charts;
+      sc.setAttribute("aria-expanded", prefs.charts);
+      sc.innerHTML = ICON.grid + (prefs.charts ? "Hide chord charts" : "Chord charts");
+    });
     // A song kept as a photo only (no words typed yet) shows the sheet itself, so it can still be played.
     if (!String(s.lyrics || "").trim()) {
       photosGet(s.id).then(function (blobs) {
