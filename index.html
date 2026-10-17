@@ -85,6 +85,8 @@ button { cursor: pointer; }
   font-family: var(--font-display); font-weight: 700; font-size: 30px; line-height: 1.1;
   margin: 0; flex: 1; min-width: 0; text-wrap: balance;
 }
+.topbar h1.logo { display: flex; }
+.topbar h1.logo img { width: 60px; height: 60px; display: block; }
 .topbar .small-title {
   font-family: var(--font-display); font-weight: 600; font-size: 22px; margin: 0;
   flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -920,7 +922,7 @@ button { cursor: pointer; }
   function renderList() {
     document.title = "Dave's Tunes";
     app.innerHTML =
-      '<header class="topbar"><h1>Dave’s Tunes</h1>' +
+      '<header class="topbar"><h1 class="logo"><img src="icon.svg" alt="Dave’s Tunes" width="60" height="60"></h1>' +
       '<button class="btn ghost icon" id="chord-book" type="button" aria-label="All chord charts" title="All chord charts">' + ICON.grid + "</button>" +
       '<button class="btn ghost" id="theme" type="button" aria-label="Change light or dark look"></button></header>' +
       '<div class="tabs" role="tablist">' +
