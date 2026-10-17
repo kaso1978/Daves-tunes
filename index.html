@@ -1,3 +1,6 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Dave's Tunes</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="theme-color" content="#0a6b55">
@@ -416,10 +419,10 @@ button { cursor: pointer; }
 
   var songs = load(KEY, null);
   if (!Array.isArray(songs)) { songs = SAMPLES.slice(); save(KEY, songs); }
-  var prefs = load(PREFS, { font: 26, speed: 4, speeds: {} });
+  var prefs = load(PREFS, { font: 30, speed: 4, speeds: {} });
   if (!prefs.speeds) prefs.speeds = {};
 
-  var FONT_MIN = 16, FONT_MAX = 56, FONT_STEP = 2;
+  var FONT_MIN = 18, FONT_MAX = 72, FONT_STEP = 2;
   var SPEED_MIN = 1, SPEED_MAX = 10;
 
   // ---------- Helpers ----------
